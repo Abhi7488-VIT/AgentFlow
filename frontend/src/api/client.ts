@@ -76,6 +76,11 @@ export const login = async (data: URLSearchParams) => {
   return res.data;
 };
 
+export const deleteReport = async (id: string) => {
+  const { data } = await apiClient.delete(`/reports/${id}`);
+  return data;
+};
+
 export const register = async (data: any) => {
   const res = await apiClient.post('/auth/register', data);
   return res.data;
