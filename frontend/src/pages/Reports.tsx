@@ -49,7 +49,7 @@ export const Reports = () => {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <a href={`/api/reports/${report.id}/export/pdf`} target="_blank" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors" title="Download PDF">
+                  <a href={`${import.meta.env.VITE_API_URL || '/api'}/reports/${report.id}/export/pdf`} target="_blank" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors" title="Download PDF">
                     <Download className="w-4 h-4" />
                   </a>
                   <button
