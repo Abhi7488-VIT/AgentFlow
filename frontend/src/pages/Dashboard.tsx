@@ -81,13 +81,13 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold gradient-text">Market Intelligence Overview</h1>
-          <p className="text-gray-400 mt-1">Real-time analysis from your active workflows</p>
+          <h1 className="text-2xl md:text-3xl font-bold gradient-text">Market Intelligence Overview</h1>
+          <p className="text-gray-400 mt-1 text-sm md:text-base">Real-time analysis from your active workflows</p>
         </div>
-        <button className="glass-button px-6 py-2 rounded-xl font-medium text-white shadow-lg flex items-center gap-2">
-          <Activity className="w-5 h-5" />
+        <button className="glass-button px-4 py-2 text-sm md:px-6 md:text-base rounded-xl font-medium text-white shadow-lg flex items-center gap-2 w-full sm:w-auto justify-center">
+          <Activity className="w-4 h-4 md:w-5 md:h-5" />
           Live Tracking Active
         </button>
       </div>
