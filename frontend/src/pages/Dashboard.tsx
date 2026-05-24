@@ -45,7 +45,7 @@ export const Dashboard = () => {
 
         // Trend data
         if (trendsRes.status === 'fulfilled') {
-          setTrendData(trendsRes.value);
+          setTrendData(Array.isArray(trendsRes.value) ? trendsRes.value : []);
         } else {
           console.warn('fetchTrends failed, using fallback:', trendsRes.reason);
           setTrendData([
