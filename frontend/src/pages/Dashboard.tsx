@@ -33,7 +33,7 @@ export const Dashboard = () => {
 
         // Sentiment distribution
         if (sentimentRes.status === 'fulfilled') {
-          setSentimentData(sentimentRes.value);
+          setSentimentData(Array.isArray(sentimentRes.value) ? sentimentRes.value : []);
         } else {
           console.warn('fetchSentiment failed, using fallback:', sentimentRes.reason);
           setSentimentData([
