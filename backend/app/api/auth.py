@@ -3,7 +3,7 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database import get_db
@@ -13,37 +13,32 @@ from app.schemas.user import UserCreate, TokenResponse, UserResponse
 
 router = APIRouter()
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Check if user exists
     result = await db.execute(select(User).where(User.email == user_in.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email already exists."
-        )
-        
-    # Create new user
-    new_user = User(
-        id=uuid.uuid4(),
-        email=user_in.email,
-        full_name=user_in.full_name,
-        hashed_password=hash_password(user_in.password),
-        role="user"
-    )
-    db.add(new_user)
-    await db.commit()
-    await db.refresh(new_user)
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Generate token
-    access_token = create_access_token(data={"sub": str(new_user.id)})
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": new_user
-    }
+    # First user gets admin role
+    total_users = await db.scalar(select(func.count(User.id)))
+    role = "admin" if total_users == 0 else "viewer"
 
+    user = User(
+        email=user_in.email,
+        hashed_password=hash_password(user_in.password),
+        full_name=user_in.full_name,
+        role=role
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+@router.get("/users", response_model=list[UserResponse])
+async def get_all_users(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    return list(users)
 @router.post("/login", response_model=TokenResponse)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),

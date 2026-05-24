@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Workflow, FileText, Settings, Bot, LogOut, X } from 'lucide-react';
+import { LayoutDashboard, Workflow, FileText, Settings, Bot, LogOut, X, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -13,6 +13,7 @@ export const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/workflows', icon: Workflow, label: 'Workflows' },
     { to: '/reports', icon: FileText, label: 'Reports' },
+    { to: '/users', icon: Users, label: 'Users' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 

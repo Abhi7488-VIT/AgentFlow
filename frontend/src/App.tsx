@@ -5,6 +5,8 @@ import { Workflows } from './pages/Workflows';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
+import { Users } from './pages/Users';
+import { Settings } from './pages/Settings';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -26,7 +28,8 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/reports" element={<Reports />} />
-            <Route path="/settings" element={<div className="animate-fade-in"><h1 className="text-3xl font-bold">Settings</h1><p className="text-gray-400 mt-4">API configuration and billing settings would go here.</p></div>} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

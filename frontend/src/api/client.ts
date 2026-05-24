@@ -85,3 +85,8 @@ export const register = async (data: any) => {
   const res = await apiClient.post('/auth/register', data);
   return res.data;
 };
+
+export const fetchUsers = async () => {
+  const { data } = await apiClient.get('/auth/users');
+  return data;
+};
