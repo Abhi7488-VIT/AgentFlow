@@ -1,18 +1,11 @@
-from rake_nltk import Rake
-import nltk
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 class KeywordExtractor:
     def __init__(self):
-        try:
-            nltk.download('stopwords', quiet=True)
-            nltk.download('punkt', quiet=True)
-            self.rake = Rake()
-        except Exception as e:
-            logger.error(f"Failed to initialize RAKE: {e}")
-            self.rake = None
+        self.rake = None
+        logger.info("Using fallback keyword extractor (OOM prevention)")
 
     def extract_keywords(self, texts: list[str], top_n: int = 20) -> list[dict]:
         if not texts:

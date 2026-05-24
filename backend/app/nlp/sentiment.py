@@ -1,4 +1,3 @@
-from transformers import pipeline
 import asyncio
 from app.core.logging import get_logger
 
@@ -11,16 +10,7 @@ class SentimentAnalyzer:
         if cls._instance is None:
             cls._instance = super(SentimentAnalyzer, cls).__new__(cls)
             cls._instance.pipeline = None
-            try:
-                # Use a small, fast model for demo/dev purposes
-                cls._instance.pipeline = pipeline(
-                    "sentiment-analysis", 
-                    model="distilbert-base-uncased-finetuned-sst-2-english",
-                    device=-1  # Force CPU for compatibility
-                )
-                logger.info("Sentiment pipeline loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load sentiment pipeline: {e}")
+            logger.info("Using lightweight fallback sentiment analyzer (OOM prevention)")
         return cls._instance
 
     async def analyze(self, texts: list[str]) -> list[dict]:

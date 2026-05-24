@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 import asyncio
 from app.core.logging import get_logger
 
@@ -11,12 +10,7 @@ class EmbeddingGenerator:
         if cls._instance is None:
             cls._instance = super(EmbeddingGenerator, cls).__new__(cls)
             cls._instance.model = None
-            try:
-                # Use a small, fast model for embeddings
-                cls._instance.model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-                logger.info("SentenceTransformer loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load SentenceTransformer: {e}")
+            logger.info("Using fallback embeddings (OOM prevention)")
         return cls._instance
 
     async def generate(self, texts: list[str]) -> list[list[float]]:

@@ -19,13 +19,6 @@ langchain
 langchain-google-genai
 langgraph
 chromadb
-sentence-transformers
-transformers
-torch
-scikit-learn
-nltk
-rake-nltk
-wordcloud
 reportlab
 python-docx
 prometheus-client
