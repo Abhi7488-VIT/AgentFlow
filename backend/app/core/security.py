@@ -44,27 +44,37 @@ def verify_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-async def get_current_user(db: AsyncSession = Depends(get_db)) -> User:
-    """Return the demo user for unauthenticated access.
-    
-    Creates the demo user in the DB on first call so that
-    foreign-key references from Workflow, Report, etc. are valid.
-    """
-    result = await db.execute(select(User).where(User.id == DEMO_USER_ID))
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    try:
+        payload = verify_token(token)
+        user_id_str = payload.get("sub")
+        if user_id_str is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user_id = UUID(user_id_str)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     
-    if user is None:
-        user = User(
-            id=DEMO_USER_ID,
-            email="admin@agentflow.ai",
-            hashed_password=hash_password("demo1234"),
-            full_name="Admin",
-            role="admin",
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-    
+        
     return user
 
 def require_role(*allowed_roles: str):

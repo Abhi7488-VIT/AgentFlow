@@ -1,7 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Workflow, FileText, Settings, Bot } from 'lucide-react';
+import { LayoutDashboard, Workflow, FileText, Settings, Bot, LogOut } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export const Sidebar = () => {
+  const { user, logout } = useAuth();
   const links = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/workflows', icon: Workflow, label: 'Workflows' },
@@ -35,16 +37,23 @@ export const Sidebar = () => {
         ))}
       </nav>
 
-      <div className="p-6 border-t border-white/5">
+      <div className="p-6 border-t border-white/5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-electric-blue to-violet flex items-center justify-center text-white font-bold">
-            AD
+            {user?.full_name?.substring(0, 2).toUpperCase() || 'U'}
           </div>
-          <div>
-            <p className="text-sm font-semibold">Admin User</p>
-            <p className="text-xs text-gray-400">admin@agentflow.ai</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{user?.full_name || 'User'}</p>
+            <p className="text-xs text-gray-400 truncate">{user?.email || ''}</p>
           </div>
         </div>
+        <button 
+          onClick={logout}
+          className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </button>
       </div>
     </aside>
   );
