@@ -90,3 +90,10 @@ export const fetchUsers = async () => {
   const { data } = await apiClient.get('/auth/users');
   return data;
 };
+
+export const downloadPdf = async (id: string) => {
+  const response = await apiClient.get(`/reports/${id}/export/pdf`, {
+    responseType: 'blob',
+  });
+  return response.data;
+};

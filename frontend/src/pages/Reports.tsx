@@ -49,9 +49,27 @@ export const Reports = () => {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <a href={`${import.meta.env.VITE_API_URL || '/api'}/reports/${report.id}/export/pdf`} target="_blank" className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors" title="Download PDF">
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const { downloadPdf } = await import('../api/client');
+                        const blob = await downloadPdf(report.id);
+                        const url = window.URL.createObjectURL(new Blob([blob]));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', `report_${report.id.substring(0,8)}.pdf`);
+                        document.body.appendChild(link);
+                        link.click();
+                        link.parentNode?.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                      } catch (error) {
+                        console.error('Download failed', error);
+                        alert('Failed to download PDF. Please try again.');
+                      }
+                    }}
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors" title="Download PDF">
                     <Download className="w-4 h-4" />
-                  </a>
+                  </button>
                   <button
                     onClick={async () => {
                       if(confirm('Are you sure you want to delete this report?')) {
