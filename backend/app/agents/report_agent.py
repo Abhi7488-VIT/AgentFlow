@@ -28,7 +28,7 @@ async def report_node(state: AgentState) -> AgentState:
             )
             
             prompt = f"""
-            You are an expert market research analyst. Create an exhaustive, highly detailed, and professional executive market research report for the product/topic: "{query}".
+            You are an elite executive market research analyst. Create a stunning, exhaustive, highly detailed, and professional executive market research report for the product/topic: "{query}".
             
             Context Data:
             Insights: {json.dumps(insights)}
@@ -36,21 +36,24 @@ async def report_node(state: AgentState) -> AgentState:
             Pain Points: {json.dumps(pain_points)}
             Trends: {json.dumps(trends)}
             
-            IMPORTANT: Do NOT output short summaries. Each section in the 'sections' dictionary MUST be a detailed, multi-paragraph analysis (at least 150-300 words per section) that deeply explores the data provided. Write the report specifically about "{query}" and adapt your tone, language, and analysis to fit the actual product or market (e.g., do not use software terms for a physical product). Use newlines (\\n) to separate paragraphs within your section text.
+            IMPORTANT: Do NOT output short summaries. Each section in the 'sections' dictionary MUST be a detailed, multi-paragraph analysis (at least 150-400 words per section) that deeply explores the data provided. Write the report specifically about "{query}" and adapt your tone, language, and analysis perfectly to fit the actual product or market. Use newlines (\\n) to separate paragraphs within your section text.
             
             Return a JSON object strictly matching this schema:
             {{
-                "title": "Comprehensive Market Research: {query}",
+                "title": "{query.title()} - Comprehensive Market Intelligence Report",
                 "executive_summary": "A comprehensive 2-3 paragraph executive summary detailing the state of the market, consumer perception, and key findings.",
-                "recommendations": ["Highly detailed, actionable recommendation 1", "Highly detailed, actionable recommendation 2", "Highly detailed, actionable recommendation 3"],
+                "recommendations": ["Highly detailed, actionable recommendation 1", "Highly detailed, actionable recommendation 2", "Highly detailed, actionable recommendation 3", "Highly detailed, actionable recommendation 4"],
                 "sections": {{
-                    "Market Overview": "Thorough market overview with multiple paragraphs detailing current market size, dynamics, and historical context...",
-                    "Consumer Sentiment": "In-depth, multi-paragraph analysis of how people feel, what drives their sentiment, and how it varies...",
-                    "Competitive Landscape": "Detailed, multi-paragraph competitor breakdown, analyzing market share, strengths, weaknesses, and positioning...",
-                    "Key Challenges & Pain Points": "Deep dive into what users struggle with, quoting synthetic examples, and exploring the severity of issues...",
-                    "Emerging Trends": "Multi-paragraph exploration of new trends in this space and how they will shape the future...",
-                    "Strategic Recommendations": "Actionable, well-reasoned, and highly detailed strategic advice for dominating this market...",
-                    "AI Confidence Score": "95% - Sentiment analysis verified..."
+                    "Market Overview & Dynamics": "Thorough market overview with multiple paragraphs detailing current market size, dynamics, and historical context...",
+                    "Consumer Sentiment Analysis": "In-depth, multi-paragraph analysis of how people feel, what drives their sentiment, and how it varies...",
+                    "Competitive Landscape & Benchmarking": "Detailed, multi-paragraph competitor breakdown, analyzing market share, strengths, weaknesses, and positioning...",
+                    "Key Challenges & Consumer Pain Points": "Deep dive into what users struggle with, quoting synthetic examples, and exploring the severity of issues...",
+                    "Emerging Market Trends": "Multi-paragraph exploration of new trends in this space and how they will shape the future...",
+                    "Pricing & Value Perception": "Deep analysis of how consumers perceive the product's pricing relative to its value and competitors...",
+                    "Target Demographics & Use Cases": "Detailed breakdown of the primary consumers and how they actually use the product...",
+                    "Strategic Action Plan": "Actionable, well-reasoned, and highly detailed strategic advice for dominating this market...",
+                    "Future Outlook & Forecast": "Predictions for where this market is heading over the next 12-24 months...",
+                    "AI Analysis Confidence": "95% - Sentiment analysis verified via multi-source aggregation..."
                 }}
             }}
             """

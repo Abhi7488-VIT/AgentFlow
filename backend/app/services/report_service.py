@@ -57,14 +57,45 @@ async def delete_report(db: AsyncSession, report_id) -> bool:
 def generate_pdf(report: Report) -> bytes:
     try:
         from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, BaseDocTemplate, PageTemplate, Frame
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
         from reportlab.lib import colors
+        from reportlab.pdfgen import canvas
+        import datetime
         
         buffer = io.BytesIO()
-        # Add a little padding to the document
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+        
+        # Define modern color palette
+        COLOR_PRIMARY = colors.HexColor('#6366F1') # Indigo
+        COLOR_SECONDARY = colors.HexColor('#0EA5E9') # Light Blue
+        COLOR_DARK = colors.HexColor('#1E293B') # Slate 800
+        COLOR_TEXT = colors.HexColor('#334155') # Slate 700
+        COLOR_LIGHT = colors.HexColor('#F8FAFC') # Slate 50
+        COLOR_ACCENT = colors.HexColor('#F43F5E') # Rose
+        
+        def header_footer(canvas_obj, doc):
+            canvas_obj.saveState()
+            # Header
+            canvas_obj.setFillColor(COLOR_PRIMARY)
+            canvas_obj.rect(0, letter[1] - 40, letter[0], 40, stroke=0, fill=1)
+            canvas_obj.setFillColor(colors.white)
+            canvas_obj.setFont("Helvetica-Bold", 12)
+            canvas_obj.drawString(50, letter[1] - 25, "AgentFlow Market Intelligence")
+            
+            # Footer
+            canvas_obj.setFillColor(COLOR_DARK)
+            canvas_obj.rect(0, 0, letter[0], 30, stroke=0, fill=1)
+            canvas_obj.setFillColor(colors.white)
+            canvas_obj.setFont("Helvetica", 9)
+            canvas_obj.drawString(50, 10, f"Generated {datetime.datetime.now().strftime('%Y-%m-%d')}")
+            canvas_obj.drawRightString(letter[0] - 50, 10, f"Page {doc.page}")
+            canvas_obj.restoreState()
+
+        doc = BaseDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=60, bottomMargin=50)
+        frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
+        template = PageTemplate(id='test', frames=frame, onPage=header_footer)
+        doc.addPageTemplates([template])
         
         styles = getSampleStyleSheet()
         
@@ -72,50 +103,74 @@ def generate_pdf(report: Report) -> bytes:
         custom_title = ParagraphStyle(
             name='CustomTitle',
             parent=styles['Heading1'],
-            fontSize=22,
-            spaceAfter=24,
-            textColor=colors.HexColor('#4F46E5'), # Indigo
+            fontSize=28,
+            spaceBefore=100,
+            spaceAfter=20,
+            textColor=COLOR_PRIMARY,
             alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            fontName='Helvetica-Bold',
+            leading=34
+        )
+        
+        custom_subtitle = ParagraphStyle(
+            name='CustomSubtitle',
+            parent=styles['Normal'],
+            fontSize=14,
+            spaceAfter=100,
+            textColor=COLOR_SECONDARY,
+            alignment=TA_CENTER,
+            fontName='Helvetica',
+            leading=20
         )
         
         custom_heading = ParagraphStyle(
             name='CustomHeading',
             parent=styles['Heading2'],
-            fontSize=14,
-            spaceBefore=16,
-            spaceAfter=8,
-            textColor=colors.HexColor('#2563EB'), # Blue
+            fontSize=16,
+            spaceBefore=24,
+            spaceAfter=12,
+            textColor=COLOR_DARK,
             fontName='Helvetica-Bold',
-            borderPadding=4
+            borderPadding=6,
+            borderWidth=0,
+            bottomPadding=4
         )
         
         custom_normal = ParagraphStyle(
             name='CustomNormal',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=8,
-            textColor=colors.HexColor('#1F2937'), # Dark Gray
+            spaceAfter=12,
+            textColor=COLOR_TEXT,
             fontName='Helvetica',
-            leading=16
+            leading=18
         )
         
         custom_bullet = ParagraphStyle(
             name='CustomBullet',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=6,
-            leftIndent=20,
-            textColor=colors.HexColor('#374151'),
+            spaceAfter=8,
+            leftIndent=25,
+            textColor=COLOR_TEXT,
             fontName='Helvetica',
-            leading=15,
+            leading=16,
             bulletIndent=10
         )
         
         flowables = []
         
+        # --- COVER PAGE ---
+        flowables.append(Spacer(1, 100))
+        flowables.append(Paragraph("<b>INTELLIGENCE REPORT</b>", custom_subtitle))
         flowables.append(Paragraph(report.title or "Market Research Report", custom_title))
         
+        flowables.append(Spacer(1, 50))
+        flowables.append(Paragraph(f"<b>Prepared for:</b> Executive Team", ParagraphStyle('Centered', parent=custom_normal, alignment=TA_CENTER)))
+        flowables.append(Paragraph(f"<b>Date:</b> {datetime.datetime.now().strftime('%B %d, %Y')}", ParagraphStyle('Centered', parent=custom_normal, alignment=TA_CENTER)))
+        flowables.append(PageBreak())
+        
+        # --- EXECUTIVE SUMMARY ---
         flowables.append(Paragraph("Executive Summary", custom_heading))
         flowables.append(Paragraph(report.executive_summary or "No summary available.", custom_normal))
         
@@ -134,31 +189,25 @@ def generate_pdf(report: Report) -> bytes:
             
             if isinstance(content, list):
                 for item in content:
-                    flowables.append(Paragraph(f"<font color='#8B5CF6'>•</font> {item}", custom_bullet))
+                    flowables.append(Paragraph(f"<font color='#0EA5E9'>■</font> {item}", custom_bullet))
             elif isinstance(content, dict):
                 for key, value in content.items():
                     if isinstance(value, list):
                         val_str = ', '.join(str(v) for v in value)
-                        flowables.append(Paragraph(f"<b><font color='#4F46E5'>{key.replace('_', ' ').title()}:</font></b> {val_str}", custom_normal))
+                        flowables.append(Paragraph(f"<b><font color='#6366F1'>{key.replace('_', ' ').title()}:</font></b> {val_str}", custom_normal))
                     else:
-                        flowables.append(Paragraph(f"<b><font color='#4F46E5'>{key.replace('_', ' ').title()}:</font></b> {value}", custom_normal))
+                        flowables.append(Paragraph(f"<b><font color='#6366F1'>{key.replace('_', ' ').title()}:</font></b> {value}", custom_normal))
             else:
                 paragraphs = str(content).split('\n')
                 for p in paragraphs:
                     if p.strip():
-                        # Replace basic markdown bold with HTML bold for reportlab
-                        formatted_p = p.strip().replace('**', '<b>').replace('**', '</b>')
-                        # Note: replace with <b> requires alternating tags, a simpler way is regex or just stripping
-                        # Let's just strip markdown asterisks for safety if it's too complex, or rely on simple replacement
-                        # Actually, ReportLab supports <b>...</b>, but if we have **bold**, we'd need regex.
-                        # For now, let's just use the string directly and remove markdown asterisks
                         clean_p = p.strip().replace('**', '')
                         flowables.append(Paragraph(clean_p, custom_normal))
 
         if not sections and report.recommendations:
-            flowables.append(Paragraph("Recommendations", custom_heading))
+            flowables.append(Paragraph("Strategic Recommendations", custom_heading))
             for rec in report.recommendations:
-                flowables.append(Paragraph(f"<font color='#8B5CF6'>•</font> {rec}", custom_bullet))
+                flowables.append(Paragraph(f"<font color='#0EA5E9'>■</font> {rec}", custom_bullet))
             
         doc.build(flowables)
         buffer.seek(0)
