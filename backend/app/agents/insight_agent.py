@@ -21,7 +21,10 @@ async def insight_node(state: AgentState) -> AgentState:
     if settings.GEMINI_API_KEY:
         try:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel(
+                'gemini-2.5-flash',
+                generation_config={"response_mime_type": "application/json"}
+            )
             
             prompt = f"""
             Analyze the following market research data for query: "{query}"
@@ -30,7 +33,7 @@ async def insight_node(state: AgentState) -> AgentState:
             Keywords: {json.dumps(keywords, indent=2)}
             Trend Data: {json.dumps(trends, indent=2)}
             
-            Generate a JSON response (strictly JSON, no markdown formatting) with the following structure:
+            Generate a JSON response with the following structure:
             {{
                 "insights": {{"summary": "Overall market summary", "key_trends": ["trend1", "trend2"]}},
                 "competitor_analysis": {{"top_competitors": ["comp1", "comp2"], "strengths": ["s1", "s2"], "weaknesses": ["w1", "w2"]}},
@@ -39,14 +42,7 @@ async def insight_node(state: AgentState) -> AgentState:
             """
             
             response = await model.generate_content_async(prompt)
-            # Basic JSON extraction (assuming the model might wrap in ```json)
-            text = response.text
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].strip()
-                
-            data = json.loads(text)
+            data = json.loads(response.text)
             
             state["insights"] = data.get("insights", {})
             state["competitor_analysis"] = data.get("competitor_analysis", {})

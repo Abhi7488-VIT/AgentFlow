@@ -22,7 +22,10 @@ async def report_node(state: AgentState) -> AgentState:
     if settings.GEMINI_API_KEY:
         try:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel(
+                'gemini-2.5-flash',
+                generation_config={"response_mime_type": "application/json"}
+            )
             
             prompt = f"""
             You are an expert market research analyst. Create an exhaustive, highly detailed, and professional executive market research report for the product/topic: "{query}".
@@ -53,13 +56,7 @@ async def report_node(state: AgentState) -> AgentState:
             """
             
             response = await model.generate_content_async(prompt)
-            text = response.text
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].strip()
-                
-            data = json.loads(text)
+            data = json.loads(response.text)
             state["report"] = data
             
         except Exception as e:
