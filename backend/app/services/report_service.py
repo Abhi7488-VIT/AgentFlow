@@ -42,6 +42,11 @@ async def delete_report(db: AsyncSession, report_id) -> bool:
     if workflow_id:
         from app.models.scraped_data import ScrapedData
         from app.models.agent_log import AgentLog
+        from app.models.analytics import Analytics
+        from app.models.embedding_metadata import EmbeddingMetadata
+        
+        await db.execute(delete(EmbeddingMetadata).where(EmbeddingMetadata.workflow_id == workflow_id))
+        await db.execute(delete(Analytics).where(Analytics.workflow_id == workflow_id))
         await db.execute(delete(AgentLog).where(AgentLog.workflow_id == workflow_id))
         await db.execute(delete(ScrapedData).where(ScrapedData.workflow_id == workflow_id))
         await db.execute(delete(Workflow).where(Workflow.id == workflow_id))
