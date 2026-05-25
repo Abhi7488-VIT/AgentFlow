@@ -143,7 +143,17 @@ def generate_pdf(report: Report) -> bytes:
                     else:
                         flowables.append(Paragraph(f"<b><font color='#4F46E5'>{key.replace('_', ' ').title()}:</font></b> {value}", custom_normal))
             else:
-                flowables.append(Paragraph(str(content), custom_normal))
+                paragraphs = str(content).split('\n')
+                for p in paragraphs:
+                    if p.strip():
+                        # Replace basic markdown bold with HTML bold for reportlab
+                        formatted_p = p.strip().replace('**', '<b>').replace('**', '</b>')
+                        # Note: replace with <b> requires alternating tags, a simpler way is regex or just stripping
+                        # Let's just strip markdown asterisks for safety if it's too complex, or rely on simple replacement
+                        # Actually, ReportLab supports <b>...</b>, but if we have **bold**, we'd need regex.
+                        # For now, let's just use the string directly and remove markdown asterisks
+                        clean_p = p.strip().replace('**', '')
+                        flowables.append(Paragraph(clean_p, custom_normal))
 
         if not sections and report.recommendations:
             flowables.append(Paragraph("Recommendations", custom_heading))
