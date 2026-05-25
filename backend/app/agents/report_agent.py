@@ -28,7 +28,7 @@ async def report_node(state: AgentState) -> AgentState:
             )
             
             prompt = f"""
-            You are an elite executive market research analyst. Create a stunning, exhaustive, highly detailed, and professional executive market research report for the product/topic: "{query}".
+            You are an elite executive consulting analyst (like McKinsey or Gartner). Create a stunning, exhaustive, highly detailed, and professional executive market research report for the product/topic: "{query}".
             
             Context Data:
             Insights: {json.dumps(insights)}
@@ -36,24 +36,37 @@ async def report_node(state: AgentState) -> AgentState:
             Pain Points: {json.dumps(pain_points)}
             Trends: {json.dumps(trends)}
             
-            IMPORTANT: Do NOT output short summaries. Each section in the 'sections' dictionary MUST be a detailed, multi-paragraph analysis (at least 150-400 words per section) that deeply explores the data provided. Write the report specifically about "{query}" and adapt your tone, language, and analysis perfectly to fit the actual product or market. Use newlines (\\n) to separate paragraphs within your section text.
+            IMPORTANT: Write in a highly professional, analytical, and insight-driven tone. Each section must be heavily detailed. Use newlines (\\n) to separate paragraphs.
             
             Return a JSON object strictly matching this schema:
             {{
-                "title": "{query.title()} - Comprehensive Market Intelligence Report",
-                "executive_summary": "A comprehensive 2-3 paragraph executive summary detailing the state of the market, consumer perception, and key findings.",
-                "recommendations": ["Highly detailed, actionable recommendation 1", "Highly detailed, actionable recommendation 2", "Highly detailed, actionable recommendation 3", "Highly detailed, actionable recommendation 4"],
+                "title": "{query.title()}",
+                "tagline": "A powerful 1-sentence tagline or slogan summarizing the product",
+                "executive_summary": "A short but dense 1-page equivalent overview explaining what the product is, the problem it solves, who it is for, major findings, and overall evaluation.",
+                "recommendations": ["Improvement 1", "New Feature 2", "Market Expansion 3", "Scaling Strategy 4", "Optimization 5"],
                 "sections": {{
-                    "Market Overview & Dynamics": "Thorough market overview with multiple paragraphs detailing current market size, dynamics, and historical context...",
-                    "Consumer Sentiment Analysis": "In-depth, multi-paragraph analysis of how people feel, what drives their sentiment, and how it varies...",
-                    "Competitive Landscape & Benchmarking": "Detailed, multi-paragraph competitor breakdown, analyzing market share, strengths, weaknesses, and positioning...",
-                    "Key Challenges & Consumer Pain Points": "Deep dive into what users struggle with, quoting synthetic examples, and exploring the severity of issues...",
-                    "Emerging Market Trends": "Multi-paragraph exploration of new trends in this space and how they will shape the future...",
-                    "Pricing & Value Perception": "Deep analysis of how consumers perceive the product's pricing relative to its value and competitors...",
-                    "Target Demographics & Use Cases": "Detailed breakdown of the primary consumers and how they actually use the product...",
-                    "Strategic Action Plan": "Actionable, well-reasoned, and highly detailed strategic advice for dominating this market...",
-                    "Future Outlook & Forecast": "Predictions for where this market is heading over the next 12-24 months...",
-                    "AI Analysis Confidence": "95% - Sentiment analysis verified via multi-source aggregation..."
+                    "Product Overview": "Detailed explanation of category, purpose, industry, key functionalities, and USP...",
+                    "Problem Statement": "What problem exists, why current solutions are weak, market gap, user frustrations...",
+                    "Proposed Solution": "How the product solves the problem (AI features, automation, workflow improvements, scalability)...",
+                    "Core Features": "Detailed explanation of major features including purpose, benefit, and expected impact...",
+                    "Target Audience": "Ideal customers, users, and industries...",
+                    "Market Analysis": "Market demand, industry trends, growth, opportunities, and adoption potential...",
+                    "Competitor Analysis": "Comparison with specific competitors (strengths, weaknesses, what makes this better)...",
+                    "SWOT Analysis": "Consulting-level breakdown of Strengths, Weaknesses, Opportunities, and Threats...",
+                    "AI Workflow Summary": "How multi-agent AI orchestration works internally for this specific context...",
+                    "Technical Evaluation": "Scalability, performance, architecture quality, and automation level...",
+                    "Business Model": "How the product earns money (SaaS, Enterprise, API billing, etc.)...",
+                    "Risk Analysis": "Technical risks, market risks, privacy concerns, AI limitations, scalability issues...",
+                    "Performance Insights": "Estimated productivity improvement, time savings, automation percentage...",
+                    "Future Enhancements": "Future possibilities (Voice AI, Mobile app, Predictive analytics)...",
+                    "Final Conclusion": "Summarize overall product value, ending with a strong professional statement."
+                }},
+                "advanced_metrics": {{
+                    "Innovation Score": "e.g. 9.5/10 - Explanation...",
+                    "Market Readiness Score": "e.g. 8.0/10 - Explanation...",
+                    "Scalability Rating": "e.g. 9.0/10 - Explanation...",
+                    "AI Confidence Score": "e.g. 95% - Explanation...",
+                    "Risk Severity Meter": "e.g. Medium - Explanation..."
                 }}
             }}
             """
