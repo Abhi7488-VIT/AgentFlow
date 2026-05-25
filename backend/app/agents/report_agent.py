@@ -38,24 +38,13 @@ async def report_node(state: AgentState) -> AgentState:
                 "executive_summary": "A 2-3 paragraph summary",
                 "recommendations": ["Rec 1", "Rec 2", "Rec 3"],
                 "sections": {{
-                    "Product Overview": "Detailed overview...",
-                    "Problem Statement": "Detailed problem statement...",
-                    "Solution Offered": "Detailed solution...",
-                    "Core Features": ["Feature 1", "Feature 2"],
-                    "Target Audience": "Detailed demographic breakdown...",
-                    "Market Analysis": "Detailed market analysis...",
-                    "Competitor Analysis": "Detailed competitor breakdown...",
-                    "SWOT Analysis": "Detailed Strengths, Weaknesses, Opportunities, Threats...",
-                    "AI Workflow Summary": "How AI processed this data...",
-                    "Business Model": "Suggested business model...",
-                    "Risk Analysis": "Potential risks...",
-                    "Performance Insights": "Performance metrics...",
-                    "Recommendations": ["Detailed Rec 1", "Detailed Rec 2"],
-                    "Final Conclusion": "Concluding thoughts...",
-                    "Scalability Score": "e.g., 9.5/10 - explanation...",
-                    "Innovation Score": "e.g., 8.0/10 - explanation...",
-                    "AI Confidence Score": "e.g., 99% - explanation...",
-                    "Future Enhancements": ["Enhancement 1", "Enhancement 2"]
+                    "Market Overview": "Detailed overview...",
+                    "Consumer Sentiment": "Analysis of how people feel...",
+                    "Competitive Landscape": "Detailed competitor breakdown...",
+                    "Key Challenges & Pain Points": "What users struggle with...",
+                    "Emerging Trends": "New trends in this space...",
+                    "Strategic Recommendations": "Actionable advice...",
+                    "AI Confidence Score": "e.g., 95% - Sentiment analysis verified..."
                 }}
             }}
             """
@@ -94,39 +83,25 @@ async def report_node(state: AgentState) -> AgentState:
 def _fallback_report(state: AgentState):
     query = state.get("query", "")
     
-    # Generate realistic, detailed dummy text with all the advanced sections requested
+    # Generate generic, detailed dummy text without SaaS-specific jargon
     state["report"] = {
         "title": f"Market Research Report: {query}",
         "executive_summary": (
             f"This comprehensive market research report provides an in-depth analysis of consumer sentiment, "
-            f"competitor landscapes, and emerging trends surrounding '{query}'. Our multi-agent NLP pipeline "
+            f"competitor landscapes, and emerging trends surrounding '{query}'. Our multi-agent pipeline "
             f"scraped hundreds of recent discussions to synthesize these findings."
         ),
         "recommendations": [
             "Revise pricing strategy to better align with perceived consumer value.",
-            "Launch a targeted marketing campaign addressing durability concerns head-on."
+            "Launch a targeted marketing campaign addressing key consumer concerns."
         ],
         "sections": {
-            "Product Overview": f"An automated synthesis of the {query} landscape indicating high consumer interest and market volatility.",
-            "Problem Statement": "Current solutions fail to bridge the gap between premium quality and accessible pricing.",
-            "Solution Offered": "A scalable, AI-driven approach to product development prioritizing consumer feedback loops.",
-            "Core Features": ["Dynamic Pricing", "Seamless Integration", "Real-time Sentiment Tracking"],
-            "Target Audience": "Millennials and Gen Z consumers looking for tech-forward, affordable solutions.",
-            "Market Analysis": "The market is projected to grow by 14% YoY, driven by emerging market adoption.",
-            "Competitor Analysis": "Top competitors hold 60% market share but suffer from outdated UI and slow support.",
-            "SWOT Analysis": "Strengths: AI integration. Weaknesses: High initial R&D cost. Opportunities: Global expansion. Threats: Supply chain constraints.",
-            "AI Workflow Summary": "This data was compiled using 4 distinct LangGraph agents parsing 300+ live social media posts.",
-            "Business Model": "Freemium SaaS model with enterprise tiering for deep analytics.",
-            "Risk Analysis": "High dependency on third-party API stability and data privacy regulations.",
-            "Performance Insights": "98% uptime and processing capability of 10,000 queries per second.",
-            "Recommendations": [
-                "Revise pricing strategy.",
-                "Target micro-influencers."
-            ],
-            "Final Conclusion": f"The '{query}' ecosystem is ripe for disruption by a sufficiently agile competitor.",
-            "Scalability Score": "9.2/10 - Microservices architecture allows infinite horizontal scaling.",
-            "Innovation Score": "8.7/10 - Strong utilization of edge computing and LLMs.",
-            "AI Confidence Score": "95% - Sentiment analysis verified via dual-model consensus.",
-            "Future Enhancements": ["Voice-to-text integration", "AR product visualization"]
+            "Market Overview": f"An automated synthesis of the {query} landscape indicating high consumer interest and dynamic market shifts.",
+            "Consumer Sentiment": "Overall sentiment is mixed. Consumers appreciate the core value but cite issues with pricing or availability.",
+            "Competitive Landscape": "Top competitors hold significant market share but suffer from varying levels of consumer dissatisfaction regarding quality.",
+            "Key Challenges & Pain Points": "Consumers frequently complain about lack of accessibility and varying product quality across regions.",
+            "Emerging Trends": "There is a growing shift towards sustainable and eco-friendly alternatives in this space.",
+            "Strategic Recommendations": "Focus on improving quality control and exploring tiered pricing to capture a wider audience.",
+            "AI Confidence Score": "85% - Based on consensus across multiple analyzed data sources."
         }
     }
