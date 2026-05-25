@@ -29,13 +29,23 @@ from sqlalchemy import delete
 from app.models.workflow import Workflow
 
 async def delete_report(db: AsyncSession, report_id) -> bool:
-    # Fetch the report to get its workflow_id
     report = await get_report(db, report_id)
-    if report and report.workflow_id:
-        # Cascade delete the workflow
-        await db.execute(delete(Workflow).where(Workflow.id == report.workflow_id))
+    if not report:
+        return False
         
+    workflow_id = report.workflow_id
+    
+    # First delete the report to avoid foreign key constraints
     result = await db.execute(delete(Report).where(Report.id == report_id))
+    
+    # Then cascade delete the workflow if it existed
+    if workflow_id:
+        from app.models.scraped_data import ScrapedData
+        from app.models.agent_log import AgentLog
+        await db.execute(delete(AgentLog).where(AgentLog.workflow_id == workflow_id))
+        await db.execute(delete(ScrapedData).where(ScrapedData.workflow_id == workflow_id))
+        await db.execute(delete(Workflow).where(Workflow.id == workflow_id))
+        
     await db.commit()
     return result.rowcount > 0
 

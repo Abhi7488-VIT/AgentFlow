@@ -35,8 +35,13 @@ async def list_workflows(db: AsyncSession, user_id, skip: int = 0, limit: int = 
     return workflows, total
 
 async def delete_workflow(db: AsyncSession, workflow_id) -> bool:
-    # Cascade delete the report associated with this workflow
+    # Cascade delete all related records to avoid foreign key violations
     from app.models.report import Report
+    from app.models.scraped_data import ScrapedData
+    from app.models.agent_log import AgentLog
+    
+    await db.execute(delete(AgentLog).where(AgentLog.workflow_id == workflow_id))
+    await db.execute(delete(ScrapedData).where(ScrapedData.workflow_id == workflow_id))
     await db.execute(delete(Report).where(Report.workflow_id == workflow_id))
     
     result = await db.execute(delete(Workflow).where(Workflow.id == workflow_id))
