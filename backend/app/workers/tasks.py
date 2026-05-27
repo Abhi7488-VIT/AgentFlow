@@ -94,7 +94,7 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                     competitor_analysis=final_state.get("competitor_analysis", {}),
                     recommendations=report_data.get("recommendations", []),
                     pain_points=final_state.get("pain_points", []),
-                    full_report=json.dumps(report_data.get("sections", {})),
+                    full_report=json.dumps(report_data),
                     status="completed" if final_state.get("review_feedback", {}).get("approved") else "draft"
                 )
                 db.add(db_report)
