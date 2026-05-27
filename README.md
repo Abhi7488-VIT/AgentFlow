@@ -184,8 +184,8 @@ make logs     # Follow Docker logs
 
 AgentFlow AI provides interactive API documentation:
 
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **Swagger UI**: `/docs` (Available when running locally at `http://localhost:8000/docs`)
+- **ReDoc**: `/redoc` (Available when running locally at `http://localhost:8000/redoc`)
 
 ### Key Endpoints
 
