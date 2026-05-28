@@ -52,7 +52,11 @@ async def insight_node(state: AgentState) -> AgentState:
             
         except Exception as e:
             logger.error(f"Error using Gemini for insights: {e}")
-            await asyncio.sleep(2)  # Delay in case of rate limit (429)
+            if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
+                logger.warning("Gemini API Rate Limit hit! Waiting 60 seconds...")
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(2)  # Delay in case of rate limit (429)
             _fallback_insights(state)
     else:
         _fallback_insights(state)

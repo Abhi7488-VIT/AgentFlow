@@ -119,8 +119,14 @@ Return JSON matching this exact schema:
                 
         except Exception as e:
             logger.error(f"Error generating report: {e}")
-            await asyncio.sleep(3)  # Delay to handle potential 429 Quota Exceeded rate limits
             
+            # If we hit the Gemini rate limit (15 RPM free tier), we must wait for the minute to reset
+            if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
+                logger.warning("Gemini API Rate Limit hit! Waiting 60 seconds for quota to reset...")
+                await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(3)
+                
             # Use Gemini to generate even the fallback, but with a simpler prompt
             try:
                 simple_model = genai.GenerativeModel(
