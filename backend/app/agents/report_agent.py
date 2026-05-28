@@ -1,4 +1,5 @@
 import time
+import asyncio
 import json
 import google.generativeai as genai
 from app.config import settings
@@ -40,8 +41,8 @@ async def report_node(state: AgentState) -> AgentState:
             
             if competitors and isinstance(competitors, dict):
                 comps = competitors.get("top_competitors", [])
-                # Skip if it's the fallback "Competitor A, Competitor B"
-                if comps and "Competitor A" not in str(comps) and "Competitor B" not in str(comps):
+                # Skip if it's the fallback
+                if comps and "Competitor A" not in str(comps) and "Leading competitors to" not in str(comps):
                     context_parts.append(f"Competitors: {json.dumps(competitors)}")
             
             if pain_points and isinstance(pain_points, list) and len(pain_points) > 0:
@@ -118,6 +119,8 @@ Return JSON matching this exact schema:
                 
         except Exception as e:
             logger.error(f"Error generating report: {e}")
+            await asyncio.sleep(3)  # Delay to handle potential 429 Quota Exceeded rate limits
+            
             # Use Gemini to generate even the fallback, but with a simpler prompt
             try:
                 simple_model = genai.GenerativeModel(

@@ -1,4 +1,5 @@
 import time
+import asyncio
 import json
 import google.generativeai as genai
 from app.config import settings
@@ -51,6 +52,7 @@ async def insight_node(state: AgentState) -> AgentState:
             
         except Exception as e:
             logger.error(f"Error using Gemini for insights: {e}")
+            await asyncio.sleep(2)  # Delay in case of rate limit (429)
             _fallback_insights(state)
     else:
         _fallback_insights(state)
@@ -82,7 +84,7 @@ def _fallback_insights(state: AgentState):
         "key_trends": ["Mixed sentiment across platforms", "Focus on technical specifications"]
     }
     state["competitor_analysis"] = {
-        "top_competitors": ["Competitor A", "Competitor B"],
+        "top_competitors": [f"Leading competitors to {query}", f"Emerging alternatives to {query}"],
         "strengths": ["Brand recognition", "Ecosystem"],
         "weaknesses": ["Price", "Battery life"]
     }
