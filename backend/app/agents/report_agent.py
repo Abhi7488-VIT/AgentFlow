@@ -4,7 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
-from app.core.sanitizer import safe_query_for_prompt
+from app.core.sanitizer import safe_query_for_prompt, extract_json
 
 logger = get_logger(__name__)
 
@@ -101,7 +101,7 @@ Return JSON matching this exact schema:
 }}"""
             
             response = await model.generate_content_async(prompt)
-            data = json.loads(response.text)
+            data = extract_json(response.text)
             
             # Validate that the report is actually about the query (not generic)
             exec_summary = data.get("executive_summary", "")
@@ -127,7 +127,7 @@ Return JSON matching this exact schema:
                 simple_prompt = f"""Write a market analysis report about "{query}" using your own knowledge. Name REAL competitors, REAL market data, REAL prices. Do NOT use placeholders like "Competitor A". Return JSON with keys: title (string), tagline (string), executive_summary (string, 2 paragraphs with real facts about {query}), recommendations (list of 5 specific strings), sections (object with "Product Overview", "Market & Competitor Analysis", "SWOT Analysis", "Recommendations", "Conclusion" — each a detailed string paragraph with real information about {query}), advanced_metrics (object with "Innovation Score", "Market Readiness Score", "Consumer Satisfaction" as strings with scores)."""
                 
                 simple_response = await simple_model.generate_content_async(simple_prompt)
-                data = json.loads(simple_response.text)
+                data = extract_json(simple_response.text)
                 state["report"] = data
                 logger.info("Simple fallback Gemini report generated")
             except Exception as e2:

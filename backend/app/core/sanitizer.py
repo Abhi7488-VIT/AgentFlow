@@ -6,6 +6,7 @@ Prevents prompt injection, enforces length limits, and strips dangerous patterns
 """
 
 import re
+import json
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -117,3 +118,24 @@ def safe_query_for_prompt(query: str) -> str:
     # Replace quotes that could break JSON schema examples in the prompt
     safe = query.replace('"', "'").replace("\\", "")
     return safe
+
+
+def extract_json(text: str) -> dict:
+    """
+    Safely extract JSON from an LLM response, handling markdown fences.
+    Sometimes Gemini returns ```json { ... } ``` even when mime_type is json.
+    """
+    try:
+        # First try direct parse
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # If it fails, strip markdown json block
+        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL | re.IGNORECASE)
+        if match:
+            return json.loads(match.group(1).strip())
+        # If still no match, try to find first { and last }
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            return json.loads(text[start_idx:end_idx+1])
+        raise ValueError(f"Could not extract JSON from text: {text[:100]}...")

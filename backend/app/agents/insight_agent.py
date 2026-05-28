@@ -4,7 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
-from app.core.sanitizer import safe_query_for_prompt
+from app.core.sanitizer import safe_query_for_prompt, extract_json
 
 logger = get_logger(__name__)
 
@@ -43,7 +43,7 @@ async def insight_node(state: AgentState) -> AgentState:
             """
             
             response = await model.generate_content_async(prompt)
-            data = json.loads(response.text)
+            data = extract_json(response.text)
             
             state["insights"] = data.get("insights", {})
             state["competitor_analysis"] = data.get("competitor_analysis", {})

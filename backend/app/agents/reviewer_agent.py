@@ -4,7 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
-from app.core.sanitizer import safe_query_for_prompt
+from app.core.sanitizer import safe_query_for_prompt, extract_json
 
 logger = get_logger(__name__)
 
@@ -57,7 +57,7 @@ async def reviewer_node(state: AgentState) -> AgentState:
             elif "```" in text:
                 text = text.split("```")[1].strip()
                 
-            data = json.loads(text)
+            data = extract_json(text)
             state["review_feedback"] = data
             
         except Exception as e:
