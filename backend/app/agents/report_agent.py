@@ -28,57 +28,74 @@ async def report_node(state: AgentState) -> AgentState:
                 generation_config={"response_mime_type": "application/json"}
             )
             
-            # Build a concise context string to keep the prompt short
-            context_summary = ""
-            if insights:
-                context_summary += f"Market Insights: {json.dumps(insights)}\n"
-            if competitors:
-                context_summary += f"Competitors: {json.dumps(competitors)}\n"
-            if pain_points:
-                context_summary += f"Pain Points: {json.dumps(pain_points)}\n"
-            if trends:
-                context_summary += f"Trends: {json.dumps(trends)}\n"
+            # Build context — but ONLY include real data, filter out fallback garbage
+            context_parts = []
             
-            prompt = f"""You are an elite market research analyst. Write a comprehensive product/market intelligence report about: "{query}".
+            # Check if insight data is real (not fallback)
+            if insights and isinstance(insights, dict):
+                summary = insights.get("summary", "")
+                # Skip if it's the fallback "Initial analysis of..." text
+                if summary and "Initial analysis of" not in summary and "Competitor A" not in str(insights):
+                    context_parts.append(f"Market Insights: {json.dumps(insights)}")
+            
+            if competitors and isinstance(competitors, dict):
+                comps = competitors.get("top_competitors", [])
+                # Skip if it's the fallback "Competitor A, Competitor B"
+                if comps and "Competitor A" not in str(comps) and "Competitor B" not in str(comps):
+                    context_parts.append(f"Competitors: {json.dumps(competitors)}")
+            
+            if pain_points and isinstance(pain_points, list) and len(pain_points) > 0:
+                # Skip if pain points look like fallback
+                first_pain = str(pain_points[0]) if pain_points else ""
+                if "Issues with" not in first_pain and "Concerns about" not in first_pain:
+                    context_parts.append(f"Pain Points: {json.dumps(pain_points)}")
+            
+            if trends and isinstance(trends, dict) and len(trends) > 0:
+                context_parts.append(f"Trends: {json.dumps(trends)}")
+            
+            has_real_data = len(context_parts) > 0
+            context_block = "\n".join(context_parts) if has_real_data else "No pipeline data available."
+            
+            prompt = f"""You are an elite market research analyst at McKinsey & Company. Write a comprehensive product/market intelligence report about: "{query}".
 
-IMPORTANT RULES:
-- EVERY section must be specifically about "{query}". Do NOT write generic content.
-- Mention real competitors, real market data, real consumer opinions about "{query}".
-- Do NOT mention AI agents, multi-agent systems, SaaS platforms, or workflow automation unless "{query}" is actually an AI/tech product.
-- Write as if you are a McKinsey consultant presenting to a Fortune 500 board.
-- Each section should be 150-300 words with real substance.
-- Use \\n to separate paragraphs.
+CRITICAL RULES:
+1. USE YOUR OWN KNOWLEDGE about "{query}" — you know about real products, real brands, real companies, and real markets. Write about REAL competitors by name, REAL market data, REAL consumer opinions.
+2. EVERY section must contain specific, factual information about "{query}". Name real competitor brands, real market sizes, real features, real prices where applicable.
+3. Do NOT use generic placeholders like "Competitor A" or "leading incumbents". Name actual companies.
+4. Do NOT mention AI agents, multi-agent systems, SaaS, or workflow automation unless "{query}" is actually an AI/tech product.
+5. Write as a McKinsey consultant presenting to a Fortune 500 board.
+6. Each section: 150-300 words of substantive, specific analysis.
+7. Use \\n to separate paragraphs.
 
-Research context gathered by our pipeline:
-{context_summary}
+{"Additional research context from our data pipeline:" + chr(10) + context_block if has_real_data else "Note: No additional pipeline data was gathered. Rely entirely on your own knowledge about this product/brand/topic."}
 
 Return JSON matching this exact schema:
 {{
-    "title": "string - Professional report title about {query}",
-    "tagline": "string - A catchy 1-sentence tagline about {query}",
-    "executive_summary": "string - 3 paragraph executive summary: (1) What {query} is and why it matters, (2) Current market position and key consumer sentiments, (3) Strategic outlook and evaluation",
-    "recommendations": ["rec1", "rec2", "rec3", "rec4", "rec5"],
+    "title": "Professional report title about {query}",
+    "tagline": "Catchy 1-sentence tagline about {query}",
+    "executive_summary": "3-paragraph executive summary: (1) What {query} is, its history, and why it matters in the market today, (2) Current competitive position with REAL competitor names and market dynamics, (3) Strategic evaluation and outlook",
+    "recommendations": ["5 specific actionable recommendations for {query}"],
     "sections": {{
-        "Product Overview": "What {query} is, its category, history, unique selling points, key features, and market positioning",
-        "Problem Statement": "What consumer problems or market gaps exist that {query} addresses or fails to address",
-        "Proposed Solution": "How {query} solves these problems through its design, features, pricing, or innovation",
-        "Core Features": "6-8 key features/attributes of {query} as bullet points: - Feature: Description\\n- Feature: Description",
-        "Target Audience": "Who buys/uses {query}, demographics, psychographics, use cases",
-        "Market & Competitor Analysis": "Market size, growth trends, key competitors with names, how {query} compares",
-        "SWOT Analysis": "STRENGTHS:\\n- point\\n- point\\n\\nWEAKNESSES:\\n- point\\n\\nOPPORTUNITIES:\\n- point\\n\\nTHREATS:\\n- point",
-        "Consumer Sentiment": "What consumers love and hate about {query}, common complaints, praise patterns",
-        "Business Model": "How {query} or its parent company makes money, pricing strategy, revenue streams",
-        "Risk Analysis": "Market risks, competitive threats, supply chain issues, regulatory concerns",
-        "Performance Insights": "Sales performance, market share, growth metrics, consumer satisfaction scores",
-        "Recommendations": "5-7 actionable strategic recommendations for {query}",
-        "Future Outlook": "Where {query} is headed, upcoming releases, market predictions, innovation pipeline",
-        "Final Conclusion": "Professional closing summary of {query}'s market position and strategic potential"
+        "Product Overview": "What {query} is, its parent company, history, category, unique selling points, key product lines, and market positioning. Name the parent company/brand.",
+        "Problem Statement": "Real consumer problems and market gaps. What do buyers actually complain about? What needs are unmet?",
+        "Proposed Solution": "How {query} addresses these problems through design, pricing, quality, innovation, or brand strategy",
+        "Core Features": "6-8 real features/attributes as bullet points: - Feature: Description\\n- Feature: Description",
+        "Target Audience": "Real demographics, psychographics, geographic markets, and use cases",
+        "Market & Competitor Analysis": "Real TAM, market growth, and NAMED competitors with specific comparison. For example if analyzing notebooks, name ITC Classmate vs Navneet vs Apsara etc.",
+        "SWOT Analysis": "STRENGTHS:\\n- real point\\n\\nWEAKNESSES:\\n- real point\\n\\nOPPORTUNITIES:\\n- real point\\n\\nTHREATS:\\n- real point",
+        "Consumer Sentiment": "Real consumer opinions, common praise and complaints from reviews/forums",
+        "Business Model": "How the company behind {query} makes money, distribution channels, pricing strategy",
+        "Risk Analysis": "Real market, competitive, supply chain, and regulatory risks",
+        "Performance Insights": "Market share estimates, growth trajectory, brand strength metrics",
+        "Recommendations": "5-7 specific actionable strategic recommendations",
+        "Future Outlook": "Where {query} and its market are heading, trends, upcoming innovations",
+        "Final Conclusion": "Professional closing summary of {query}'s market position and potential"
     }},
     "advanced_metrics": {{
-        "Innovation Score": "X.X/10 - justification specific to {query}",
+        "Innovation Score": "X.X/10 - specific justification for {query}",
         "Market Readiness Score": "X.X/10 - justification",
         "Scalability Rating": "X.X/10 - justification",
-        "Consumer Satisfaction": "XX% - justification",
+        "Consumer Satisfaction": "XX% - justification based on known consumer sentiment",
         "Risk Severity": "Low/Medium/High - justification"
     }}
 }}"""
@@ -107,7 +124,7 @@ Return JSON matching this exact schema:
                     'gemini-2.5-flash',
                     generation_config={"response_mime_type": "application/json"}
                 )
-                simple_prompt = f"""Write a brief market analysis report about "{query}" as JSON with keys: title (string), tagline (string), executive_summary (string, 2 paragraphs about {query} specifically), recommendations (list of 3 strings), sections (object with keys: "Product Overview", "Market Analysis", "SWOT Analysis", "Recommendations", "Conclusion" - each a string paragraph about {query}), advanced_metrics (object with "Innovation Score", "Market Readiness Score", "Consumer Satisfaction" as strings)."""
+                simple_prompt = f"""Write a market analysis report about "{query}" using your own knowledge. Name REAL competitors, REAL market data, REAL prices. Do NOT use placeholders like "Competitor A". Return JSON with keys: title (string), tagline (string), executive_summary (string, 2 paragraphs with real facts about {query}), recommendations (list of 5 specific strings), sections (object with "Product Overview", "Market & Competitor Analysis", "SWOT Analysis", "Recommendations", "Conclusion" — each a detailed string paragraph with real information about {query}), advanced_metrics (object with "Innovation Score", "Market Readiness Score", "Consumer Satisfaction" as strings with scores)."""
                 
                 simple_response = await simple_model.generate_content_async(simple_prompt)
                 data = json.loads(simple_response.text)
