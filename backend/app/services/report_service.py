@@ -63,6 +63,18 @@ def _sanitize_html(text: str) -> str:
     # Strip markdown bold
     text = text.replace('**', '')
     text = text.replace('*', '')
+    # Replace common Unicode characters that ReportLab standard fonts don't support
+    text = text.replace('\u20b9', 'Rs. ') # Rupee
+    text = text.replace('\u2013', '-')    # En dash
+    text = text.replace('\u2014', '--')   # Em dash
+    text = text.replace('\u2018', "'")    # Left single quote
+    text = text.replace('\u2019', "'")    # Right single quote
+    text = text.replace('\u201c', '"')    # Left double quote
+    text = text.replace('\u201d', '"')    # Right double quote
+    text = text.replace('\u2026', '...')  # Ellipsis
+    # Strip any remaining characters that are outside latin-1 (ReportLab's Helvetica only supports Latin-1)
+    text = text.encode('latin1', 'ignore').decode('latin1')
+    
     # Escape ampersands that aren't already escaped
     text = text.replace('&', '&amp;')
     # Escape angle brackets that aren't our own tags
