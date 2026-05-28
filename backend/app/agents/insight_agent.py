@@ -4,6 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
+from app.core.sanitizer import safe_query_for_prompt
 
 logger = get_logger(__name__)
 
@@ -12,7 +13,7 @@ async def insight_node(state: AgentState) -> AgentState:
     state["current_agent"] = "insights"
     start_time = time.time()
     
-    query = state.get("query", "")
+    query = safe_query_for_prompt(state.get("query", ""))
     topics = state.get("topics", [])
     keywords = state.get("keywords", [])
     trends = state.get("trends", {})

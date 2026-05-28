@@ -4,6 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
+from app.core.sanitizer import safe_query_for_prompt
 
 logger = get_logger(__name__)
 
@@ -13,7 +14,7 @@ async def reviewer_node(state: AgentState) -> AgentState:
     start_time = time.time()
     
     report = state.get("report", {})
-    query = state.get("query", "")
+    query = safe_query_for_prompt(state.get("query", ""))
     revision_count = state.get("revision_count", 0)
     
     state["revision_count"] = revision_count + 1

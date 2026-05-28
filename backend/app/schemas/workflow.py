@@ -1,11 +1,25 @@
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from uuid import UUID
 from datetime import datetime
+
 
 class WorkflowBase(BaseModel):
     query: str
     sources: List[str] = ["amazon", "youtube", "reddit"]
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Query cannot be empty.")
+        if len(v) < 2:
+            raise ValueError("Query is too short. Enter a valid product or topic.")
+        if len(v) > 500:
+            raise ValueError("Query is too long (max 500 characters).")
+        return v
+
 
 class WorkflowCreate(WorkflowBase):
     pass

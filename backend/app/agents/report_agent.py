@@ -4,6 +4,7 @@ import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
+from app.core.sanitizer import safe_query_for_prompt
 
 logger = get_logger(__name__)
 
@@ -12,7 +13,8 @@ async def report_node(state: AgentState) -> AgentState:
     state["current_agent"] = "report"
     start_time = time.time()
     
-    query = state.get("query", "")
+    # Sanitize query before inserting into any prompt
+    query = safe_query_for_prompt(state.get("query", ""))
     insights = state.get("insights", {})
     competitors = state.get("competitor_analysis", {})
     pain_points = state.get("pain_points", [])

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.database import get_db
 from app.core.security import get_current_user
+from app.core.sanitizer import sanitize_query, safe_query_for_prompt
 from app.models.user import User
 from app.schemas.workflow import WorkflowCreate, WorkflowResponse, WorkflowListResponse
 from app.services import workflow_service
@@ -19,13 +20,22 @@ async def create_workflow(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Sanitize user query before it goes anywhere
+    try:
+        clean_query, warnings = sanitize_query(workflow_in.query)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Override the raw query with the sanitized version
+    workflow_in.query = clean_query
+    
     workflow = await workflow_service.create_workflow(db, current_user.id, workflow_in)
     
-    # Launch background task
+    # Launch background task with sanitized query
     background_tasks.add_task(
         execute_workflow_task,
         workflow_id=workflow.id,
-        query=workflow.query,
+        query=clean_query,
         sources=workflow.sources,
         user_id=current_user.id
     )
