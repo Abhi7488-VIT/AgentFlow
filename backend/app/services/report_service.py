@@ -241,7 +241,7 @@ def generate_pdf(report: Report) -> bytes:
         # ━━━━━━━━━━ ADVANCED METRICS SCORECARD ━━━━━━━━━━
         if adv_metrics:
             flow.append(Spacer(1, 6))
-            flow.append(Paragraph('AI Evaluation Scorecard', s_section))
+            flow.append(Paragraph('Product Evaluation Scorecard', s_section))
             flow.append(HRFlowable(width='100%', thickness=1, color=C_BG_LIGHT,
                                     spaceAfter=8))
             # Build a table of metrics
