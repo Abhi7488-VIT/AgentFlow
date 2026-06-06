@@ -5,6 +5,9 @@ import { MetricCard } from '../components/dashboard/MetricCard';
 import { fetchOverview, fetchSentiment, fetchTrends, fetchRecentActivity } from '../api/client';
 
 const COLOR_MAP: Record<string, string> = {
+  'POSITIVE': '#10b981',
+  'NEGATIVE': '#ef4444',
+  'NEUTRAL': '#6b7280',
   'Positive': '#10b981',
   'Negative': '#ef4444',
   'Neutral': '#6b7280'
