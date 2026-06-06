@@ -4,7 +4,11 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { fetchOverview, fetchSentiment, fetchTrends, fetchRecentActivity } from '../api/client';
 
-const COLORS = ['#10b981', '#ef4444', '#6b7280']; // Positive, Negative, Neutral
+const COLOR_MAP: Record<string, string> = {
+  'Positive': '#10b981',
+  'Negative': '#ef4444',
+  'Neutral': '#6b7280'
+};
 
 export const Dashboard = () => {
   const [metrics, setMetrics] = useState<any>(null);
@@ -164,8 +168,8 @@ export const Dashboard = () => {
                   dataKey="count"
                   nameKey="label"
                 >
-                  {sentimentData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  {sentimentData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLOR_MAP[entry.label] || '#9ca3af'} />
                   ))}
                 </Pie>
                 <Tooltip 
@@ -177,7 +181,7 @@ export const Dashboard = () => {
           <div className="flex justify-center gap-4 mt-4">
             {sentimentData.map((entry, index) => (
               <div key={entry.label} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[entry.label] || '#9ca3af' }}></div>
                 <span className="text-sm text-gray-400">{entry.label}</span>
               </div>
             ))}
