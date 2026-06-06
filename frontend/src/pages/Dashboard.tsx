@@ -179,7 +179,7 @@ export const Dashboard = () => {
             </ResponsiveContainer>
           </div>
           <div className="flex justify-center gap-4 mt-4">
-            {sentimentData.map((entry, index) => (
+            {sentimentData.map((entry) => (
               <div key={entry.label} className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[entry.label] || '#9ca3af' }}></div>
                 <span className="text-sm text-gray-400">{entry.label}</span>
