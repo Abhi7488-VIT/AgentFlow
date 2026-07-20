@@ -32,16 +32,6 @@ Whether you're tracking competitor movements, analyzing market sentiment, or dis
 
 ---
 
-## Screenshots
-
-<div align="center">
-
-> *Screenshots coming soon — the dashboard features interactive charts, real-time agent monitoring, and comprehensive market analysis views.*
-
-</div>
-
----
-
 ## Features
 
 - 🤖 **Multi-Agent Orchestration** — LangGraph-powered agent workflows with dynamic task routing and parallel execution
