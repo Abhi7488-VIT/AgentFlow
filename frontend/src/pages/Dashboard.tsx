@@ -78,9 +78,9 @@ export const Dashboard = () => {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="flex items-center gap-3 text-electric-blue">
-          <div className="w-4 h-4 rounded-full bg-blue-500 animate-ping"></div>
-          <span className="text-xl font-medium">Loading AI Insights...</span>
+        <div className="flex items-center gap-3 text-clay-blue">
+          <div className="w-4 h-4 rounded-full bg-clay-blue animate-ping"></div>
+          <span className="text-xl font-medium text-clay-ink">Loading AI Insights...</span>
         </div>
       </div>
     );
@@ -91,9 +91,9 @@ export const Dashboard = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold gradient-text">Market Intelligence Overview</h1>
-          <p className="text-gray-400 mt-1 text-sm md:text-base">Real-time analysis from your active workflows</p>
+          <p className="text-clay-ink-muted mt-1 text-sm md:text-base">Real-time analysis from your active workflows</p>
         </div>
-        <button className="glass-button px-4 py-2 text-sm md:px-6 md:text-base rounded-xl font-medium text-white shadow-lg flex items-center gap-2 w-full sm:w-auto justify-center">
+        <button className="clay-button px-4 py-2 text-sm md:px-6 md:text-base flex items-center gap-2 w-full sm:w-auto justify-center">
           <Activity className="w-4 h-4 md:w-5 md:h-5" />
           Live Tracking Active
         </button>
@@ -128,8 +128,8 @@ export const Dashboard = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Trend Chart */}
-        <div className="glass-card p-6 rounded-2xl lg:col-span-2">
-          <h2 className="text-xl font-bold mb-6">Sentiment Trends</h2>
+        <div className="clay-card p-6 lg:col-span-2">
+          <h2 className="text-xl font-bold mb-6 text-clay-ink">Sentiment Trends</h2>
           <div className="h-80 min-w-0">
             <ResponsiveContainer width="99%" height="100%">
               <AreaChart data={trendData}>
@@ -143,12 +143,12 @@ export const Dashboard = () => {
                     <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} />
-                <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(10, 15, 30, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                  itemStyle={{ color: '#fff' }}
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+                <XAxis dataKey="date" stroke="#9CA3AF" axisLine={false} tickLine={false} />
+                <YAxis stroke="#9CA3AF" axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+                  itemStyle={{ color: '#1E1B4B' }}
                 />
                 <Area type="monotone" dataKey="positive" stroke="#10b981" fillOpacity={1} fill="url(#colorPositive)" strokeWidth={2} />
                 <Area type="monotone" dataKey="negative" stroke="#ef4444" fillOpacity={1} fill="url(#colorNegative)" strokeWidth={2} />
@@ -158,8 +158,8 @@ export const Dashboard = () => {
         </div>
 
         {/* Sentiment Distribution */}
-        <div className="glass-card p-6 rounded-2xl">
-          <h2 className="text-xl font-bold mb-6">Overall Sentiment</h2>
+        <div className="clay-card p-6">
+          <h2 className="text-xl font-bold mb-6 text-clay-ink">Overall Sentiment</h2>
           <div className="h-64 min-w-0">
             <ResponsiveContainer width="99%" height="100%">
               <RechartsPie>
@@ -175,8 +175,8 @@ export const Dashboard = () => {
                     <Cell key={`cell-${index}`} fill={COLOR_MAP[entry.label] || '#9ca3af'} />
                   ))}
                 </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(10, 15, 30, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
                 />
               </RechartsPie>
             </ResponsiveContainer>
@@ -185,7 +185,7 @@ export const Dashboard = () => {
             {sentimentData.map((entry) => (
               <div key={entry.label} className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[entry.label] || '#9ca3af' }}></div>
-                <span className="text-sm text-gray-400">{entry.label}</span>
+                <span className="text-sm text-clay-ink-light">{entry.label}</span>
               </div>
             ))}
           </div>
