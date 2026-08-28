@@ -12,17 +12,17 @@ interface MetricCardProps {
 
 export const MetricCard = ({ title, value, icon, trend }: MetricCardProps) => {
   return (
-    <div className="glass-card p-6 rounded-2xl flex flex-col justify-between hover:shadow-lg transition-shadow">
+    <div className="clay-card p-6 flex flex-col justify-between hover:translate-y-[-2px] transition-all duration-200">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-gray-400 font-medium">{title}</h3>
-        <div className="text-electric-blue bg-blue-500/10 p-2 rounded-xl">
+        <h3 className="text-clay-ink-muted font-medium">{title}</h3>
+        <div className="text-white bg-clay-blue p-2.5 rounded-2xl shadow-[inset_0_2px_3px_rgba(255,255,255,0.3),0_3px_0_0_#2563EB]">
           {icon}
         </div>
       </div>
       <div>
-        <p className="text-3xl font-bold text-white mb-2">{value}</p>
+        <p className="text-3xl font-bold text-clay-ink mb-2">{value}</p>
         {trend && (
-          <p className={`text-sm font-medium ${trend.isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+          <p className={`text-sm font-medium ${trend.isPositive ? 'text-clay-green-dark' : 'text-clay-coral-dark'}`}>
             {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}% from last week
           </p>
         )}

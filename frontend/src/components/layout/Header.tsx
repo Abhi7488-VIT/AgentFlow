@@ -82,35 +82,35 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
 
   const getIcon = (type: string) => {
     switch (type) {
-      case 'success': return <CheckCircle className="w-4 h-4 text-emerald-400" />;
-      case 'warning': return <AlertCircle className="w-4 h-4 text-amber-400" />;
-      case 'workflow': return <Zap className="w-4 h-4 text-indigo-400" />;
-      case 'report': return <FileText className="w-4 h-4 text-sky-400" />;
-      default: return <Clock className="w-4 h-4 text-gray-400" />;
+      case 'success': return <CheckCircle className="w-4 h-4 text-clay-green-dark" />;
+      case 'warning': return <AlertCircle className="w-4 h-4 text-clay-yellow-dark" />;
+      case 'workflow': return <Zap className="w-4 h-4 text-clay-blue-dark" />;
+      case 'report': return <FileText className="w-4 h-4 text-clay-blue" />;
+      default: return <Clock className="w-4 h-4 text-clay-ink-muted" />;
     }
   };
 
   return (
-    <header className="h-20 glass-card border-b border-white/5 flex items-center justify-between px-4 md:px-8 sticky top-0 z-10 backdrop-blur-md">
+    <header className="h-20 bg-white border-b-2 border-clay-border shadow-[0_4px_12px_rgba(0,0,0,0.04)] flex items-center justify-between px-4 md:px-8 sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <button 
+        <button
           onClick={toggleSidebar}
-          className="md:hidden text-gray-400 hover:text-white p-2"
+          className="md:hidden text-clay-ink-muted hover:text-clay-ink p-2"
         >
           <Menu className="w-6 h-6" />
         </button>
-        <div className="hidden md:flex items-center gap-4 bg-white/5 px-4 py-2 rounded-xl border border-white/5 w-96">
-          <Search className="w-5 h-5 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Search workflows, reports..." 
-            className="bg-transparent border-none outline-none text-sm w-full text-white placeholder-gray-500"
+        <div className="hidden md:flex items-center gap-4 bg-clay-bg px-4 py-2 rounded-2xl border-2 border-clay-border w-96">
+          <Search className="w-5 h-5 text-clay-ink-muted" />
+          <input
+            type="text"
+            placeholder="Search workflows, reports..."
+            className="bg-transparent border-none outline-none text-sm w-full text-clay-ink placeholder-clay-ink-muted"
           />
         </div>
       </div>
 
       <div className="flex items-center gap-4 md:gap-6">
-        <button className="md:hidden text-gray-400 hover:text-white transition-colors">
+        <button className="md:hidden text-clay-ink-muted hover:text-clay-ink transition-colors">
           <Search className="w-6 h-6" />
         </button>
 
@@ -118,44 +118,40 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
         <div className="relative" ref={panelRef}>
           <button
             onClick={() => setShowNotifications((v) => !v)}
-            className="relative text-gray-400 hover:text-white transition-colors"
+            className="relative text-clay-ink-muted hover:text-clay-ink transition-colors"
             id="notification-bell"
           >
             <Bell className="w-6 h-6" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-[#0a0f1e] text-[10px] text-white font-bold flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-clay-coral rounded-full border-2 border-white text-[10px] text-white font-bold flex items-center justify-center">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
             {unreadCount === 0 && (
-              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#0a0f1e]"></span>
+              <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-clay-coral rounded-full border-2 border-white"></span>
             )}
           </button>
 
           {/* Notification Dropdown Panel */}
           {showNotifications && (
             <div
-              className="absolute right-0 top-12 w-[380px] max-h-[480px] rounded-2xl border border-white/10 shadow-2xl overflow-hidden z-50"
-              style={{
-                background: 'linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(30,41,59,0.98) 100%)',
-                backdropFilter: 'blur(24px)',
-              }}
+              className="absolute right-0 top-12 w-[380px] max-h-[480px] rounded-2xl border-2 border-clay-border bg-white overflow-hidden z-50 shadow-[0_6px_0_0_#E5E7EB,0_12px_24px_rgba(0,0,0,0.10)]"
             >
               {/* Panel Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-                <h3 className="text-white font-semibold text-sm tracking-wide">Notifications</h3>
+              <div className="flex items-center justify-between px-5 py-4 border-b-2 border-clay-border">
+                <h3 className="text-clay-ink font-semibold text-sm tracking-wide">Notifications</h3>
                 <div className="flex items-center gap-3">
                   {notifications.length > 0 && (
                     <button
                       onClick={markAllRead}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      className="text-xs text-clay-blue hover:text-clay-blue-dark transition-colors"
                     >
                       Mark all read
                     </button>
                   )}
                   <button
                     onClick={() => setShowNotifications(false)}
-                    className="text-gray-500 hover:text-white transition-colors"
+                    className="text-clay-ink-muted hover:text-clay-ink transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -166,20 +162,20 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
               <div className="overflow-y-auto max-h-[360px] custom-scrollbar">
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
-                    <div className="w-6 h-6 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-clay-blue/30 border-t-clay-blue rounded-full animate-spin" />
                   </div>
                 ) : notifications.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                  <div className="flex flex-col items-center justify-center py-12 text-clay-ink-muted">
                     <Bell className="w-10 h-10 mb-3 opacity-30" />
                     <p className="text-sm">No notifications yet</p>
-                    <p className="text-xs mt-1 text-gray-600">Run a workflow to get started</p>
+                    <p className="text-xs mt-1 text-clay-ink-muted">Run a workflow to get started</p>
                   </div>
                 ) : (
                   notifications.map((n) => (
                     <div
                       key={n.id}
-                      className={`flex items-start gap-3 px-5 py-3.5 border-b border-white/5 transition-colors cursor-pointer hover:bg-white/5 ${
-                        !n.read ? 'bg-indigo-500/5' : ''
+                      className={`flex items-start gap-3 px-5 py-3.5 border-b border-clay-border transition-colors cursor-pointer hover:bg-clay-blue/5 ${
+                        !n.read ? 'bg-clay-blue/5' : ''
                       }`}
                       onClick={() =>
                         setNotifications((prev) =>
@@ -189,14 +185,14 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
                     >
                       <div className="mt-0.5 flex-shrink-0">{getIcon(n.type)}</div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm leading-tight ${!n.read ? 'text-white font-medium' : 'text-gray-300'}`}>
+                        <p className={`text-sm leading-tight ${!n.read ? 'text-clay-ink font-semibold' : 'text-clay-ink-light'}`}>
                           {n.title}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{n.message}</p>
-                        <p className="text-[10px] text-gray-600 mt-1.5">{n.time}</p>
+                        <p className="text-xs text-clay-ink-muted mt-1 line-clamp-2">{n.message}</p>
+                        <p className="text-[10px] text-clay-ink-muted mt-1.5">{n.time}</p>
                       </div>
                       {!n.read && (
-                        <span className="w-2 h-2 rounded-full bg-indigo-500 mt-2 flex-shrink-0" />
+                        <span className="w-2 h-2 rounded-full bg-clay-blue mt-2 flex-shrink-0" />
                       )}
                     </div>
                   ))
@@ -205,10 +201,10 @@ export const Header = ({ toggleSidebar }: HeaderProps) => {
 
               {/* Panel Footer */}
               {notifications.length > 0 && (
-                <div className="px-5 py-3 border-t border-white/10 flex justify-center">
+                <div className="px-5 py-3 border-t-2 border-clay-border flex justify-center">
                   <button
                     onClick={clearAll}
-                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                    className="text-xs text-clay-ink-muted hover:text-clay-coral transition-colors"
                   >
                     Clear all notifications
                   </button>
