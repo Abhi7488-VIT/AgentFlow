@@ -1,3 +1,5 @@
+"""RAG service - question answering over indexed workflow data."""
+
 from app.rag.retriever import RAGRetriever
 
 async def query_rag(question: str, workflow_id: str = None) -> dict:

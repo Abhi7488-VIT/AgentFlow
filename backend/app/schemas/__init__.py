@@ -1,1 +1,1 @@
-# AgentFlow AI - Schemas Package
+"""AgentFlow AI - Pydantic request/response schemas."""

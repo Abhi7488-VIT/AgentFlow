@@ -1,3 +1,5 @@
+"""LangGraph workflow graph definition and execution."""
+
 from langgraph.graph import StateGraph, END
 from app.agents.state import AgentState
 from app.agents.research_agent import research_node

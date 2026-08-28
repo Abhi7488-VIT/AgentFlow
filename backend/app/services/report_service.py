@@ -1,8 +1,15 @@
+"""Report service - CRUD operations and PDF/DOCX generation."""
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 import io
 import re
 from app.models.report import Report
+from app.models.workflow import Workflow
+from app.models.scraped_data import ScrapedData
+from app.models.agent_log import AgentLog
+from app.models.analytics import Analytics
+from app.models.embedding_metadata import EmbeddingMetadata
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,9 +33,6 @@ async def list_reports(db: AsyncSession, user_id, skip: int = 0, limit: int = 10
     
     return reports, total
 
-from sqlalchemy import delete
-from app.models.workflow import Workflow
-
 async def delete_report(db: AsyncSession, report_id) -> bool:
     report = await get_report(db, report_id)
     if not report:
@@ -41,11 +45,6 @@ async def delete_report(db: AsyncSession, report_id) -> bool:
     
     # Then cascade delete the workflow if it existed
     if workflow_id:
-        from app.models.scraped_data import ScrapedData
-        from app.models.agent_log import AgentLog
-        from app.models.analytics import Analytics
-        from app.models.embedding_metadata import EmbeddingMetadata
-        
         await db.execute(delete(EmbeddingMetadata).where(EmbeddingMetadata.workflow_id == workflow_id))
         await db.execute(delete(Analytics).where(Analytics.workflow_id == workflow_id))
         await db.execute(delete(AgentLog).where(AgentLog.workflow_id == workflow_id))
@@ -90,7 +89,7 @@ def generate_pdf(report: Report) -> bytes:
             Spacer, PageBreak, Table, TableStyle, HRFlowable
         )
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.lib.enums import TA_CENTER
         from reportlab.lib import colors
         from reportlab.lib.units import inch
         import datetime

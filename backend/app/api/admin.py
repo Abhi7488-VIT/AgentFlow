@@ -1,3 +1,5 @@
+"""Admin-only API routes (user listing, system stats)."""
+
 from fastapi import APIRouter, Depends
 from app.core.security import require_role
 

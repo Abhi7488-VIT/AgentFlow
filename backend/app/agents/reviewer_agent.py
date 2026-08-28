@@ -1,5 +1,7 @@
+"""Report reviewer agent - quality validation with optional Gemini-powered review."""
+
+import asyncio
 import time
-import json
 import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
@@ -62,7 +64,6 @@ async def reviewer_node(state: AgentState) -> AgentState:
             
         except Exception as e:
             logger.error(f"Error reviewing report: {e}")
-            import asyncio
             if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
                 logger.warning("Gemini API Rate Limit hit! Waiting 60 seconds...")
                 await asyncio.sleep(60)

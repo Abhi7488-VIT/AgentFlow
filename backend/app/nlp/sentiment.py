@@ -1,3 +1,5 @@
+"""Sentiment analysis with rule-based fallback."""
+
 import asyncio
 from app.core.logging import get_logger
 

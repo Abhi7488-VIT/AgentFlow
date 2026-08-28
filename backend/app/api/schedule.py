@@ -1,3 +1,5 @@
+"""Scheduled task API routes - create, list, deactivate recurring analyses."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List

@@ -1,3 +1,5 @@
+"""Report generation agent - produces structured market intelligence reports via Gemini."""
+
 import time
 import asyncio
 import json

@@ -1,11 +1,12 @@
+"""Workflow API routes - create, list, get, delete analysis workflows."""
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 from uuid import UUID
 
 from app.database import get_db
 from app.core.security import get_current_user
-from app.core.sanitizer import sanitize_query, safe_query_for_prompt
+from app.core.sanitizer import sanitize_query
 from app.models.user import User
 from app.schemas.workflow import WorkflowCreate, WorkflowResponse, WorkflowListResponse
 from app.services import workflow_service

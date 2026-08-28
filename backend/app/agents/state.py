@@ -1,4 +1,6 @@
-from typing import TypedDict, Optional, Any, List
+"""Typed state dictionary shared across all LangGraph agent nodes."""
+
+from typing import TypedDict, List
 
 class AgentState(TypedDict):
     query: str
