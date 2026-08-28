@@ -27,10 +27,10 @@ export const Workflows = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed': return <CheckCircle className="w-5 h-5 text-emerald-400" />;
-      case 'running': return <Play className="w-5 h-5 text-electric-blue animate-pulse" />;
-      case 'failed': return <XCircle className="w-5 h-5 text-red-400" />;
-      default: return <Clock className="w-5 h-5 text-gray-400" />;
+      case 'completed': return <CheckCircle className="w-5 h-5 text-clay-green-dark" />;
+      case 'running': return <Play className="w-5 h-5 text-clay-blue animate-pulse" />;
+      case 'failed': return <XCircle className="w-5 h-5 text-clay-coral" />;
+      default: return <Clock className="w-5 h-5 text-clay-ink-muted" />;
     }
   };
 
@@ -39,55 +39,55 @@ export const Workflows = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold gradient-text">Workflows</h1>
-          <p className="text-gray-400 mt-1">Manage and track your autonomous research agents</p>
+          <p className="text-clay-ink-muted mt-1">Manage and track your autonomous research agents</p>
         </div>
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
-          className="glass-button px-6 py-2 rounded-xl font-medium text-white shadow-lg flex items-center gap-2"
+          className="clay-button px-6 py-2 flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
           New Research
         </button>
       </div>
 
-      <div className="glass-card rounded-2xl overflow-hidden">
+      <div className="clay-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[800px]">
-            <thead className="bg-white/5 border-b border-white/5">
+          <table className="clay-table min-w-[800px]">
+            <thead>
               <tr>
-                <th className="p-4 font-medium text-gray-400">Query</th>
-                <th className="p-4 font-medium text-gray-400">Sources</th>
-                <th className="p-4 font-medium text-gray-400">Status</th>
-                <th className="p-4 font-medium text-gray-400">Date</th>
-                <th className="p-4"></th>
+                <th>Query</th>
+                <th>Sources</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-clay-border">
               {loading ? (
-                <tr><td colSpan={5} className="p-8 text-center text-gray-400">Loading workflows...</td></tr>
+                <tr><td colSpan={5} className="p-8 text-center text-clay-ink-muted">Loading workflows...</td></tr>
               ) : workflows.length === 0 ? (
-                <tr><td colSpan={5} className="p-8 text-center text-gray-400">No workflows found. Start a new research task!</td></tr>
+                <tr><td colSpan={5} className="p-8 text-center text-clay-ink-muted">No workflows found. Start a new research task!</td></tr>
               ) : (
                 workflows.map((wf) => (
-                  <tr key={wf.id} className="hover:bg-white/5 transition-colors">
-                    <td className="p-4 font-medium">{wf.query}</td>
-                    <td className="p-4">
+                  <tr key={wf.id} className="transition-colors">
+                    <td className="font-medium">{wf.query}</td>
+                    <td>
                       <div className="flex gap-2 flex-wrap">
                         {wf.sources.map((s: string) => (
-                          <span key={s} className="px-2 py-1 text-xs rounded-lg bg-white/10 text-gray-300 capitalize">
+                          <span key={s} className="px-2 py-1 text-xs rounded-lg bg-clay-bg text-clay-ink-light border border-clay-border capitalize">
                             {s}
                           </span>
                         ))}
                       </div>
                     </td>
-                    <td className="p-4">
+                    <td>
                       <div className="flex items-center gap-2">
                         {getStatusIcon(wf.status)}
-                        <span className="capitalize">{wf.status}</span>
+                        <span className="capitalize text-clay-ink">{wf.status}</span>
                       </div>
                     </td>
-                    <td className="p-4 text-gray-400 whitespace-nowrap">{new Date(wf.created_at).toLocaleDateString()}</td>
-                    <td className="p-4 text-right">
+                    <td className="text-clay-ink-muted whitespace-nowrap">{new Date(wf.created_at).toLocaleDateString()}</td>
+                    <td className="text-right">
                       <button
                         onClick={async () => {
                           if(confirm('Are you sure you want to delete this workflow?')) {
@@ -99,7 +99,7 @@ export const Workflows = () => {
                             }
                           }
                         }}
-                        className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
+                        className="p-2 rounded-lg bg-clay-coral/10 hover:bg-clay-coral/20 text-clay-coral transition-colors shrink-0"
                         title="Delete Workflow"
                       >
                         <Trash2 className="w-4 h-4" />
