@@ -1,4 +1,5 @@
-from datetime import datetime
+"""Trend analysis over time-series sentiment data."""
+
 from typing import List, Dict, Any
 from app.core.logging import get_logger
 

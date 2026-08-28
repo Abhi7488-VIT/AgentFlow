@@ -21,11 +21,7 @@ if config.config_file_name is not None:
 
 # Import models for autogenerate support
 from app.database import Base
-
-# Add all model imports here so Alembic can detect schema changes
-# from app.models.user import User
-# from app.models.workflow import Workflow
-# from app.models.agent import Agent
+import app.models  # noqa: F401 - registers every model on Base.metadata
 
 target_metadata = Base.metadata
 

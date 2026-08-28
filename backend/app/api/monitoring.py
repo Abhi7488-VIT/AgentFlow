@@ -1,3 +1,5 @@
+"""Monitoring API routes - health check, system stats, agent logs."""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -5,8 +7,7 @@ import psutil
 import os
 
 from app.database import get_db
-from app.core.security import get_current_user, require_role
-from app.models.user import User
+from app.core.security import require_role
 
 router = APIRouter()
 

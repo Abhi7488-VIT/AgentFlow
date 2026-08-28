@@ -1,6 +1,5 @@
 """Auth API routes — placeholder for future JWT login/signup."""
 
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -15,7 +14,10 @@ router = APIRouter()
 
 @router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == user_in.email))
+    # Case-insensitive: stored emails may predate email normalisation.
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == user_in.email.lower())
+    )
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -45,7 +47,9 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     # Try to authenticate user
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == form_data.username.lower())
+    )
     user = result.scalar_one_or_none()
     
     if not user or not verify_password(form_data.password, user.hashed_password):

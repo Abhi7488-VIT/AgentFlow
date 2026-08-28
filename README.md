@@ -50,7 +50,7 @@ Whether you're tracking competitor movements, analyzing market sentiment, or dis
 | Layer | Technology |
 |:---|:---|
 | **Backend** | Python 3.11 · FastAPI · SQLAlchemy · Alembic · Pydantic |
-| **Frontend** | React 18 · TypeScript · Vite · TanStack Query · Recharts |
+| **Frontend** | React 19 · TypeScript · Vite · Tailwind CSS · Zustand · Axios · Recharts |
 | **AI / ML** | Google Gemini · LangGraph · LangChain · ChromaDB (RAG) |
 | **Database** | PostgreSQL 16 · ChromaDB (Vector Store) |
 | **Monitoring** | Prometheus · Grafana · MLflow · Structured Logging |
@@ -141,12 +141,18 @@ graph TB
 - **Git**
 
 ### 1. Setup Backend
+
 ```bash
 cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-### Frontend
+
+# Start the API server
+uvicorn app.main:app --reload --port 8000
+```
+
+### 2. Setup Frontend
 
 ```bash
 cd frontend
@@ -181,14 +187,17 @@ AgentFlow AI provides interactive API documentation:
 
 | Method | Endpoint | Description |
 |:---|:---|:---|
+| `POST` | `/api/auth/register` | Create an account |
 | `POST` | `/api/auth/login` | Authenticate and receive JWT token |
-| `GET` | `/api/workflows` | List all workflows |
-| `POST` | `/api/workflows` | Create a new analysis workflow |
+| `GET` | `/api/workflows/` | List all workflows |
+| `POST` | `/api/workflows/` | Create a new analysis workflow |
 | `GET` | `/api/workflows/{id}` | Get workflow status and results |
-| `POST` | `/api/agents/execute` | Trigger agent execution |
-| `GET` | `/api/intelligence/reports` | Retrieve analysis reports |
-| `GET` | `/api/monitoring/metrics` | Prometheus metrics endpoint |
-| `GET` | `/api/health` | Health check |
+| `GET` | `/api/reports/` | Retrieve analysis reports |
+| `GET` | `/api/reports/{id}/export/pdf` | Export a report as PDF |
+| `GET` | `/api/dashboard/overview` | Aggregate dashboard metrics |
+| `POST` | `/api/rag/query` | Ask a question over indexed workflow data |
+| `GET` | `/api/monitoring/health` | Health check |
+| `GET` | `/metrics` | Prometheus metrics endpoint |
 
 ---
 
@@ -204,24 +213,28 @@ AgentFlow/
 │   ├── app/
 │   │   ├── agents/            # LangGraph agent definitions
 │   │   ├── api/               # API route handlers
-│   │   ├── core/              # Config, security, dependencies
+│   │   ├── core/              # Config, security, logging, middleware
 │   │   ├── models/            # SQLAlchemy ORM models
+│   │   ├── nlp/               # Sentiment, topics, keywords, trends
+│   │   ├── rag/               # Embeddings, vector store, retriever
 │   │   ├── schemas/           # Pydantic request/response schemas
+│   │   ├── scrapers/          # Amazon, YouTube, Reddit scrapers
 │   │   ├── services/          # Business logic layer
+│   │   ├── workers/           # Background task workers
+│   │   ├── config.py          # App configuration (env vars)
 │   │   ├── database.py        # Database connection setup
 │   │   └── main.py            # FastAPI application entry
 │   ├── tests/                 # Backend test suite
 │   ├── alembic.ini            # Alembic configuration
 │   ├── Dockerfile             # Backend container
+│   ├── pytest.ini             # Pytest configuration
 │   └── requirements.txt       # Python dependencies
 ├── frontend/                   # React Frontend
 │   ├── src/
+│   │   ├── api/               # Axios API client
 │   │   ├── components/        # Reusable UI components
-│   │   ├── pages/             # Page components
-│   │   ├── hooks/             # Custom React hooks
-│   │   ├── services/          # API client services
-│   │   ├── stores/            # State management
-│   │   └── types/             # TypeScript type definitions
+│   │   ├── context/           # React context providers
+│   │   └── pages/             # Page components
 │   ├── Dockerfile             # Frontend container
 │   ├── nginx.conf             # Frontend Nginx config
 │   └── package.json           # Node dependencies
@@ -234,9 +247,6 @@ AgentFlow/
 │       └── prometheus.yml     # Prometheus scrape config
 ├── nginx/                      # Reverse Proxy
 │   └── nginx.conf             # Main Nginx configuration
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml          # GitHub Actions pipeline
 ├── .env.example               # Environment variable template
 ├── .gitignore                 # Git ignore rules
 ├── docker-compose.yml         # Docker Compose orchestration

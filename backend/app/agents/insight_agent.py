@@ -1,3 +1,5 @@
+"""Insight generation agent - competitor analysis and pain point extraction via Gemini."""
+
 import time
 import asyncio
 import json

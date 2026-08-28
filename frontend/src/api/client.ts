@@ -81,7 +81,7 @@ export const deleteReport = async (id: string) => {
   return data;
 };
 
-export const register = async (data: any) => {
+export const register = async (data: { email: string; password: string; full_name: string }) => {
   const res = await apiClient.post('/auth/register', data);
   return res.data;
 };

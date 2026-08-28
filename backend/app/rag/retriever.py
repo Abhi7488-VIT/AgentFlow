@@ -1,3 +1,5 @@
+"""RAG retriever - embed, search ChromaDB, generate answer via Gemini."""
+
 import google.generativeai as genai
 from app.config import settings
 from app.rag.embeddings import EmbeddingGenerator

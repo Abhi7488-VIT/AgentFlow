@@ -1,3 +1,5 @@
+"""Request logging and Prometheus metrics middleware."""
+
 import time
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware

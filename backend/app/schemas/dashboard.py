@@ -1,4 +1,6 @@
-from typing import List, Optional
+"""Dashboard response schemas."""
+
+from typing import List
 from pydantic import BaseModel
 
 class OverviewMetrics(BaseModel):

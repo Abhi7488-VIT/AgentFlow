@@ -1,3 +1,5 @@
+"""Data cleaning agent - deduplication, text normalization, language filtering."""
+
 import time
 import re
 from app.agents.state import AgentState

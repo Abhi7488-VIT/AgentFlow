@@ -1,3 +1,5 @@
+"""NLP analysis agent - sentiment, topic, keyword, and trend extraction."""
+
 import time
 from app.agents.state import AgentState
 from app.nlp.sentiment import SentimentAnalyzer

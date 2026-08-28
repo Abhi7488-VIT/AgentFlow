@@ -1,3 +1,5 @@
+"""Embedding generation with fallback dummy vectors."""
+
 import asyncio
 from app.core.logging import get_logger
 
