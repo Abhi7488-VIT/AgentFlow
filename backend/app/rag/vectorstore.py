@@ -1,5 +1,6 @@
+"""ChromaDB vector store wrapper with async support."""
+
 import chromadb
-from chromadb.config import Settings
 import asyncio
 from app.config import settings
 from app.core.logging import get_logger

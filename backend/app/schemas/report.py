@@ -1,3 +1,5 @@
+"""Report response schemas."""
+
 from typing import List, Optional, Any
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID

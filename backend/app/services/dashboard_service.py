@@ -1,10 +1,10 @@
+"""Dashboard service - aggregation queries for overview metrics."""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.workflow import Workflow
 from app.models.report import Report
 from app.models.scraped_data import ScrapedData
-from app.models.analytics import Analytics
-from app.models.agent_log import AgentLog
 from app.models.scheduled_task import ScheduledTask
 
 async def get_overview_metrics(db: AsyncSession, user_id) -> dict:

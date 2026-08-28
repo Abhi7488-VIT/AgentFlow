@@ -1,3 +1,5 @@
+"""Report API routes - CRUD and PDF/DOCX export."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession

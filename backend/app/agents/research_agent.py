@@ -1,3 +1,5 @@
+"""Research agent - orchestrates data collection from configured scrapers."""
+
 import asyncio
 import time
 from app.agents.state import AgentState

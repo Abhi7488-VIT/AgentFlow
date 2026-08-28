@@ -1,4 +1,6 @@
-from fastapi import HTTPException, Request, status
+"""Application error types and the FastAPI exception handler."""
+
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 
 class AppError(Exception):

@@ -1,5 +1,7 @@
+"""Password hashing, JWT creation, and the current-user dependency."""
+
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Optional
 from uuid import UUID
 from jose import jwt, JWTError
 import bcrypt

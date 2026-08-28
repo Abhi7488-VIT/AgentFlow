@@ -1,3 +1,5 @@
+"""Schedule service - CRUD for recurring analysis tasks."""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.scheduled_task import ScheduledTask

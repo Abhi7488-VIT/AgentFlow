@@ -1,4 +1,5 @@
-import asyncio
+"""Background task worker - executes LangGraph workflows and persists results."""
+
 import json
 from datetime import datetime
 from uuid import UUID

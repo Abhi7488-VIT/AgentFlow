@@ -1,6 +1,7 @@
+"""Report reviewer agent - quality validation with optional Gemini-powered review."""
+
 import asyncio
 import time
-import json
 import google.generativeai as genai
 from app.config import settings
 from app.agents.state import AgentState
