@@ -5,6 +5,7 @@ __pycache__/
 *.db
 .env
 *.egg-info/
+*.egg
 dist/
 build/
 .venv/
@@ -14,15 +15,18 @@ venv/
 node_modules/
 dist/
 .env.local
+.env.*.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-*
 
 # Docker
 *.log
+docker-compose.override.yml
 
 # MLflow
 mlruns/
@@ -34,8 +38,18 @@ chroma_data/
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Test
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Build artifacts
+*.whl
+*.tar.gz
+
+# Temp files
+*.tmp
+*.bak
+*.orig
