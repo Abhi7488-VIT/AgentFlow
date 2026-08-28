@@ -34,6 +34,8 @@ app = FastAPI(title=settings.APP_NAME, version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
+    # TODO: Restrict origins to your frontend domain in production
+    # e.g., allow_origins=["https://your-frontend.netlify.app"]
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
