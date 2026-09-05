@@ -13,6 +13,15 @@ const COLOR_MAP: Record<string, string> = {
   'Neutral': '#6b7280'
 };
 
+// Sentiment is VADER's compound score in [-1, 1]: -1 wholly negative,
+// 0 neutral, +1 wholly positive. Rendering it as a percentage would imply
+// a 0-100 scale it does not have.
+const formatSentiment = (score?: number) => {
+  if (score === undefined || score === null || Number.isNaN(score)) return '—';
+  const rounded = score.toFixed(2);
+  return score > 0 ? `+${rounded}` : rounded;
+};
+
 export const Dashboard = () => {
   const [metrics, setMetrics] = useState<any>(null);
   const [sentimentData, setSentimentData] = useState<any[]>([]);
@@ -35,7 +44,7 @@ export const Dashboard = () => {
           setMetrics(overviewRes.value);
         } else {
           console.warn('fetchOverview failed, using fallback:', overviewRes.reason);
-          setMetrics({ total_workflows: 0, total_reports: 0, avg_sentiment_score: 0.5, total_data_points: 0 });
+          setMetrics({ total_workflows: 0, total_reports: 0, avg_sentiment_score: 0, total_data_points: 0 });
         }
 
         // Sentiment distribution
@@ -55,15 +64,7 @@ export const Dashboard = () => {
           setTrendData(Array.isArray(trendsRes.value) ? trendsRes.value : []);
         } else {
           console.warn('fetchTrends failed, using fallback:', trendsRes.reason);
-          setTrendData([
-            { date: 'Mon', positive: 0, negative: 0 },
-            { date: 'Tue', positive: 0, negative: 0 },
-            { date: 'Wed', positive: 0, negative: 0 },
-            { date: 'Thu', positive: 0, negative: 0 },
-            { date: 'Fri', positive: 0, negative: 0 },
-            { date: 'Sat', positive: 0, negative: 0 },
-            { date: 'Sun', positive: 0, negative: 0 },
-          ]);
+          setTrendData([]);
         }
 
         // Recent activity removed
@@ -105,19 +106,16 @@ export const Dashboard = () => {
           title="Total Workflows" 
           value={metrics?.total_workflows || 0} 
           icon={<Workflow className="w-6 h-6" />}
-          trend={{ value: 12, isPositive: true }}
         />
         <MetricCard 
           title="Reports Generated" 
           value={metrics?.total_reports || 0} 
           icon={<FileText className="w-6 h-6" />}
-          trend={{ value: 5, isPositive: true }}
         />
         <MetricCard 
           title="Avg Sentiment" 
-          value={`${(metrics?.avg_sentiment_score * 100 || 0).toFixed(1)}%`} 
+          value={formatSentiment(metrics?.avg_sentiment_score)} 
           icon={<PieChart className="w-6 h-6" />}
-          trend={{ value: 2.1, isPositive: false }}
         />
         <MetricCard 
           title="Data Points Scraped" 
