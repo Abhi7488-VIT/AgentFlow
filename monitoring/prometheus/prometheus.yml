@@ -15,7 +15,7 @@ global:
 scrape_configs:
   # AgentFlow Backend API metrics
   - job_name: 'agentflow-backend'
-    metrics_path: '/api/monitoring/metrics'
+    metrics_path: '/metrics/'
     static_configs:
       - targets: ['backend:8000']
         labels:
