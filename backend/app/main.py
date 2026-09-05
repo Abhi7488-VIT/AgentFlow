@@ -10,6 +10,7 @@ from app.database import init_db
 from app.core.exceptions import AppError, app_error_handler
 from app.core.middleware import RequestLoggingMiddleware, PrometheusMiddleware
 from app.config import settings
+from app.core.scheduler import start_scheduler, stop_scheduler
 from app.core.logging import get_logger
 
 from app.api.auth import router as auth_router
@@ -28,8 +29,10 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting up application...")
     await init_db()
+    start_scheduler()
     yield
     logger.info("Shutting down application...")
+    stop_scheduler()
 
 
 app = FastAPI(title=settings.APP_NAME, version="1.0.0", lifespan=lifespan)

@@ -96,6 +96,6 @@ async def reviewer_node(state: AgentState) -> AgentState:
 def _fallback_review(state: AgentState):
     state["review_feedback"] = {
         "approved": True,
-        "feedback": "Placeholder review passed successfully.",
+        "feedback": "Auto-approved: no LLM review available (no API key or review call failed).",
         "quality_score": 0.8
     }

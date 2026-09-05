@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Agent workflow
     MAX_REPORT_REVISIONS: int = 2      # reviewer -> report loops before auto-approve
 
+    # Recurring schedules - polls the DB for due ScheduledTask rows.
+    SCHEDULER_ENABLED: bool = True
+
     # Scrapers
     ALLOW_MOCK_DATA: bool = True       # fall back to synthetic data when live sources fail
 
