@@ -140,9 +140,23 @@ graph TB
 ### Prerequisites
 - **Python** 3.11+
 - **Node.js** 20+
+- **Docker** (optional, for the full stack)
 - **Git**
 
-### 1. Setup Backend
+### 1. Configure environment
+
+Every other step depends on this one — `docker-compose.yml` reads `.env`,
+and the backend loads it through pydantic-settings.
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` and set `GEMINI_API_KEY`. That single key powers report
+generation, insight extraction, and RAG embeddings. Everything else is
+optional — see [Data sources](#data-sources) below.
+
+### 2. Setup Backend
 
 ```bash
 cd backend
@@ -150,21 +164,56 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
+# Create the database schema
+alembic upgrade head
+
 # Start the API server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Setup Frontend
+The first account you register becomes the admin; everyone after is a
+regular user.
+
+### 3. Setup Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
+
+### Run the full stack with Docker
+
+```bash
+cp .env.example .env    # required — compose will not start without it
+docker compose up --build
+```
+
+Brings up 8 services: PostgreSQL, backend, frontend, ChromaDB, MLflow,
+Prometheus, Grafana, and Nginx.
+
+### Running tests
+
+```bash
+cd backend && pytest -q
+```
+
+The suite is deliberately offline — it needs no API keys and makes no
+network calls, so it runs identically locally and in CI.
+
+---
+
+## Data sources
+
+| Source | Credentials | Behaviour without them |
+|:---|:---|:---|
+| **YouTube** | None required | Live. Uses the Data API when `YOUTUBE_API_KEY` is set, otherwise innertube — youtube.com's own JSON API |
+| **Amazon** | None required | Live. Session-warmed detail-page scraping across 3 marketplaces |
+| **Reddit** | **Required** | Falls back to synthetic data. Reddit blocks all unauthenticated access, so live collection needs an app from [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) (type "script") |
+
+Every collected item carries `metadata.is_mock`, so synthetic demo data is
+always distinguishable from real data. Set `ALLOW_MOCK_DATA=false` to make
+a source failure raise instead of silently falling back.
 
 ### Using Make
 
@@ -197,9 +246,11 @@ AgentFlow AI provides interactive API documentation:
 | `GET` | `/api/reports/` | Retrieve analysis reports |
 | `GET` | `/api/reports/{id}/export/pdf` | Export a report as PDF |
 | `GET` | `/api/dashboard/overview` | Aggregate dashboard metrics |
-| `POST` | `/api/rag/query` | Ask a question over indexed workflow data |
+| `POST` | `/api/rag/query` | Ask a question answered only from a workflow's own corpus |
+| `POST` | `/api/rag/index` | Rebuild a workflow's vector index |
+| `GET` | `/api/rag/status/{id}` | Whether a workflow's corpus is queryable |
 | `GET` | `/api/monitoring/health` | Health check |
-| `GET` | `/metrics` | Prometheus metrics endpoint |
+| `GET` | `/metrics/` | Prometheus metrics endpoint |
 
 ---
 

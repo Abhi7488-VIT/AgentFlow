@@ -53,3 +53,15 @@ htmlcov/
 *.tmp
 *.bak
 *.orig
+
+# Local scratch scripts - test_db.py holds a live database URL, and RAI.py
+# belongs to an unrelated project. Fenced off so `git add .` cannot publish them.
+/test_db.py
+/RAI.py
+/backend/test_gemini_json.py
+
+# Personal interview-prep notes (ARCHITECTURE.md is the repo-facing doc)
+/PROJECT_GUIDE.md
+/PROJECT_DEEP_DIVE.md
+/PROJECT_GUIDE.pdf
+/AgentFlow_Architecture.pdf
