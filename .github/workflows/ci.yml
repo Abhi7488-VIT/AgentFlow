@@ -76,6 +76,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Compose reads env_file: .env, which is gitignored. Generating it
+      # from the example doubles as a check that .env.example stays
+      # complete enough to bring the stack up.
+      - name: Create .env from example
+        run: cp .env.example .env
+
       - name: Validate compose file
         run: docker compose config --quiet
 
