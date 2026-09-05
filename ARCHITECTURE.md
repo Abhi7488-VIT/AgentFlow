@@ -11,10 +11,13 @@ AgentFlow is a **three-tier web application with an asynchronous AI pipeline bol
 A React single-page app talks to one FastAPI service over HTTP. When a user starts a research job, the API
 does *not* do the work — it writes a `pending` row, hands the job to a background task, and responds in under
 a second. The background task runs a **LangGraph state machine** of six agents that scrape public data, clean
-and analyse it, and call **Google Gemini** three times to produce a report. Everything lands in **PostgreSQL**.
-The browser polls until the status flips to `completed`.
+and analyse it, and call **Google Gemini** three times to produce a report. Everything lands in **PostgreSQL**,
+and the same corpus is embedded into **ChromaDB** so the report stays queryable afterwards — follow-up
+questions are answered from that workflow's own evidence, with citations. The browser polls until the status
+flips to `completed`.
 
-The single most important idea: **the HTTP request never waits for the AI work.**
+Two ideas carry most of the design: **the HTTP request never waits for the AI work**, and **the evidence is
+kept, not just the answer.**
 
 ---
 
@@ -27,31 +30,46 @@ flowchart TB
     end
 
     subgraph SERVER["Render — one Python process"]
-        API["FastAPI<br/>8 routers · JWT · Pydantic"]
+        API["FastAPI<br/>8 routers · JWT + RBAC · Pydantic"]
+        SCH["Scheduler<br/>polls due schedules"]
         WORK["Background Worker<br/>execute_workflow_task"]
         LG["LangGraph<br/>6-agent state machine"]
+        IDX["RAG indexer<br/>chunk · embed · upsert"]
     end
 
     subgraph EXT["External services"]
         SRC["Amazon · YouTube · Reddit"]
-        GEM["Google Gemini 2.5 Flash"]
+        GEM["Google Gemini<br/>2.5 Flash + embedding-001"]
     end
 
     subgraph DATA["Storage"]
         PG[("PostgreSQL / Neon<br/>8 tables")]
-        CH[("ChromaDB<br/>vectors, local disk")]
+        CH[("ChromaDB<br/>one collection per workflow")]
+    end
+
+    subgraph OBS["Observability"]
+        PR["Prometheus → Grafana"]
+        ML["MLflow<br/>one run per workflow"]
     end
 
     UI -->|"1 · POST /api/workflows + JWT"| API
     API -->|"2 · INSERT workflow (pending)"| PG
     API -.->|"3 · hand off, respond in under 1s"| WORK
+    SCH -.->|"3b · due schedule creates a workflow"| WORK
     WORK -->|"4 · ainvoke(AgentState)"| LG
-    LG -->|"5 · HTTP scrape / API calls"| SRC
+    LG -->|"5 · scrape / API calls"| SRC
     LG -->|"6 · 3 prompts, JSON responses"| GEM
     WORK -->|"7 · INSERT data, report, logs"| PG
-    UI -->|"8 · poll status every 10s"| API
+    WORK -->|"8 · index the corpus"| IDX
+    IDX -->|"embed"| GEM
+    IDX -->|"upsert vectors"| CH
+    WORK -->|"9 · params + metrics"| ML
+    UI -->|"10 · poll status every 10s"| API
+    UI -->|"11 · ask a follow-up question"| API
+    API -->|"retrieve top-k"| CH
+    API -->|"grounded answer"| GEM
     API -->|"SELECT + aggregates"| PG
-    API -->|"top-k vector search"| CH
+    API --> PR
 ```
 
 ### Reading the numbered flow
@@ -61,11 +79,19 @@ flowchart TB
 | **1** | User submits a query + sources. Axios attaches the JWT from `localStorage` automatically. | `frontend/src/api/client.ts` |
 | **2** | Query is validated, sanitised, and a workflow row is written with `status="pending"`. | `api/workflows.py` |
 | **3** | The long job is registered as a background task. **The response is sent immediately.** | `BackgroundTasks` |
+| **3b** | Alternatively, the scheduler finds a `ScheduledTask` whose `next_run_at` has passed and creates the workflow itself. | `core/scheduler.py` |
 | **4** | The worker opens its own DB connection, flips status to `running`, and invokes the agent graph. | `workers/tasks.py` |
 | **5** | The research agent fans out to the selected scrapers concurrently. | `agents/research_agent.py` |
 | **6** | Three agents each make one Gemini call — insights, report, review. | `agents/insight_agent.py`, `report_agent.py`, `reviewer_agent.py` |
 | **7** | One transaction writes scraped rows, analytics, the report, and per-agent logs. | `workers/tasks.py` |
-| **8** | The browser polls every 10 seconds until status is `completed`. | `pages/Workflows.tsx` |
+| **8** | The same corpus is chunked, embedded and upserted into that workflow's own vector collection — this is what makes the report queryable afterwards. | `rag/indexer.py` |
+| **9** | The run is logged to MLflow with its live-data ratio, per-agent latency and quality metrics. | `core/tracking.py` |
+| **10** | The browser polls every 10 seconds until status is `completed`. | `pages/Workflows.tsx` |
+| **11** | Later, a follow-up question retrieves from that workflow's collection and is answered with citations. | `rag/retriever.py` |
+
+**The shape to notice:** steps 1–3 are synchronous and fast, 4–9 are asynchronous and slow, and 10–11 are
+read-only. The entire architecture above the storage layer exists to keep that middle band off the request
+path.
 
 ---
 
@@ -112,8 +138,9 @@ Two stores, with a clear division of responsibility:
 - **PostgreSQL (Neon in production)** — the system of record. Eight tables holding users, jobs, raw evidence,
   computed metrics, reports, and per-agent execution logs. Relational where the shape is fixed; JSON columns
   where the LLM's output shape varies.
-- **ChromaDB** — an embedded, on-disk vector store used only by the RAG endpoint, with one collection per
-  workflow so questions about one product can't retrieve another's data.
+- **ChromaDB** — an embedded, on-disk vector store holding one collection per workflow, so questions about one
+  product cannot retrieve another's data. Populated at the end of every run by the indexer (§6) and read by the
+  RAG endpoint.
 
 ---
 
@@ -128,7 +155,8 @@ flowchart LR
     I --> RP[report]
     RP --> RV{reviewer}
     RV -->|approved| E((end))
-    RV -->|rejected| RP
+    RV -->|"rejected, under cap"| RP
+    RV -->|"cap reached: auto-approve"| E
 ```
 
 Six nodes, five plain edges, and **one conditional edge** — the reviewer can send the report back, which makes
@@ -168,13 +196,31 @@ summary to `agent_logs`, which is what makes the pipeline auditable after the fa
 work; an LLM would be slower, more expensive and *less* reliable at them. The model is used only where
 judgement is genuinely needed: interpreting, writing, and evaluating.
 
+### How the research agent actually collects
+
+Each source has no usable free public API, so each is reached differently — and each degrades down its own
+chain rather than failing the run:
+
+| Source | Live path | Credentials | Without them |
+|:--|:--|:--|:--|
+| **YouTube** | Data API v3 if a key is set, otherwise **innertube** — the JSON API youtube.com's own front-end calls, reading the continuation token out of the watch page | Optional | Still live, via innertube |
+| **Amazon** | Session warmed on the marketplace home page, rotating browser fingerprints, reviews read off the **product detail page** (the dedicated reviews endpoint now requires sign-in), across 3 marketplaces | None | Still live |
+| **Reddit** | OAuth2 `client_credentials` against `oauth.reddit.com`, with a cached bearer token | **Required** | Synthetic data — Reddit blocks all unauthenticated access |
+
+**The property that matters more than any of them:** every collected item carries `metadata.is_mock`, so
+synthetic demo data can never be silently mistaken for real data — and `ALLOW_MOCK_DATA=false` turns every one
+of those fallbacks into a raised error instead. A pipeline that quietly invents its own evidence is worse than
+one that fails.
+
 ### Two safety properties built into the graph
 
 - **Concurrency without fragility** — the research agent runs all scrapers via
   `asyncio.gather(..., return_exceptions=True)`, so three sources take as long as the *slowest* one, and one
   source failing does not kill the other two.
-- **Guaranteed termination** — the reviewer increments a `revision_count` and force-approves after two
-  revisions. A cyclic agent graph must never let an LLM decide when to stop.
+- **Guaranteed termination, guarded twice** — the reviewer increments `revision_count` and force-approves at
+  `MAX_REPORT_REVISIONS`, *and* the graph's routing function enforces the same cap independently. The second
+  guard exists because the first one trusts the reviewer to return well-formed JSON; if it returns `{}` or
+  `None`, the router still ends the run. A cyclic agent graph must never let an LLM decide when to stop.
 
 ---
 
@@ -188,6 +234,8 @@ sequenceDiagram
     participant G as LangGraph
     participant X as Scrapers + Gemini
     participant D as PostgreSQL
+    participant C as ChromaDB
+    participant M as MLflow
 
     U->>A: POST /api/workflows (query, sources, JWT)
     A->>A: validate · authenticate · sanitise
@@ -202,6 +250,8 @@ sequenceDiagram
     X-->>G: raw data, then JSON insights / report / review
     G-->>W: final AgentState
     W->>D: INSERT scraped_data, analytics, report, agent_logs
+    W->>C: chunk, embed, upsert vectors
+    W->>M: log params + metrics
     W->>D: UPDATE status = completed
 
     loop every 10 seconds
@@ -244,7 +294,61 @@ without a database round-trip.
 
 ---
 
-## 6. The five decisions that shaped this architecture
+## 6. The RAG layer
+
+A report is a snapshot. The corpus behind it is the more valuable artefact, so every completed workflow is
+also indexed into its own vector collection — which turns "here is your report" into "ask this data anything".
+
+```mermaid
+flowchart TB
+    subgraph W["Write path — runs once, at workflow completion"]
+        W1["cleaned_data"]
+        W2["db.flush()<br/>rows now have primary keys"]
+        W3["chunk_text<br/>800 chars · 100 overlap"]
+        W4["embed as retrieval_document<br/>768-d · L2-normalised"]
+        W5[("upsert into workflow_{id}<br/>id = scraped_id:index")]
+        W6["EmbeddingMetadata row per chunk"]
+        W1 --> W2 --> W3 --> W4 --> W5
+        W2 --> W6
+    end
+
+    subgraph R["Read path — runs per question"]
+        R1["question"]
+        R2["sanitise<br/>same injection guard as any user input"]
+        R3["embed as retrieval_query"]
+        R4["top-10 cosine search"]
+        R5["drop hits below the similarity floor"]
+        R6["numbered context block"]
+        R7["Gemini: answer ONLY from context, cite [n]"]
+        R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7
+    end
+
+    W5 -.->|"same collection"| R4
+```
+
+Four design decisions worth defending:
+
+1. **One collection per workflow.** Questions about one product cannot retrieve another's data. It also makes
+   deletion trivial — dropping a workflow drops its collection.
+2. **Deterministic chunk ids** (`{scraped_id}:{index}`). Re-indexing upserts over the same ids rather than
+   duplicating, so the operation is idempotent and safe to retry.
+3. **Asymmetric embedding task types.** Documents are embedded as `retrieval_document` and questions as
+   `retrieval_query`, which is the asymmetry the model is trained for. Gemini only returns unit-length vectors
+   at its full 3072 dimensions, so the truncated 768-d output is re-normalised — without that, cosine distance
+   is meaningless.
+4. **A similarity floor before the prompt.** Retrieval always returns *something*; the floor is what stops
+   weakly-related chunks being presented to the model as evidence. Below it, the endpoint says it does not have
+   enough context rather than letting the model answer from memory.
+
+**Failure behaviour is deliberately asymmetric.** If embedding fails partway through indexing, the workflow is
+left un-indexed rather than half-indexed — a collection with a partial or mixed-dimension vector set answers
+questions *wrongly*, which is worse than not answering. But if retrieval succeeds and only the summarising call
+is rate-limited, the endpoint returns the retrieved context with its citations: the expensive half already
+succeeded.
+
+---
+
+## 7. The five decisions that shaped this architecture
 
 1. **Return immediately, work in the background.** A 60-second job behind a synchronous HTTP request is a
    timeout waiting to happen. Splitting them is what lets the API stay responsive — and it's also why this
@@ -262,7 +366,7 @@ without a database round-trip.
 
 ---
 
-## 7. Deployment topology
+## 8. Deployment topology
 
 ```mermaid
 flowchart LR
@@ -276,12 +380,16 @@ flowchart LR
   that want a CDN, versus a long-lived Python process running minute-long jobs.
 - **Because the origins differ, CORS is required in production** — but not in development, where the Vite dev
   server proxies `/api` to the backend and everything is same-origin. That asymmetry is worth knowing about.
+- **The scheduler shares the API process**, like the background worker does. Same trade-off, same fix: it is
+  fine for one instance and becomes wrong the moment there are two, at which point the poller belongs in a
+  dedicated worker with a lock.
 - **A full Docker Compose stack exists in the repo** (Postgres, backend, frontend, ChromaDB, Prometheus,
-  Grafana, MLflow) for local development and demos. Production is the Netlify + Render + Neon path above.
+  Grafana, MLflow — 8 services) for local development and demos. Production is the Netlify + Render + Neon
+  path above.
 
 ---
 
-## 8. What's wired vs. what's designed
+## 9. What's wired vs. what's designed
 
 So the diagrams aren't read as promises:
 
