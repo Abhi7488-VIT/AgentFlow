@@ -1,4 +1,4 @@
-"""Auth API routes — placeholder for future JWT login/signup."""
+"""Auth API routes - registration, login, and current-user lookup."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
