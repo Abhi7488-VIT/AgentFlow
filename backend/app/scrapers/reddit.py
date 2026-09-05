@@ -1,18 +1,38 @@
 """
-Reddit scraper using PRAW with realistic demo/mock mode.
+Reddit scraper using the official Reddit OAuth2 API.
+
+Reddit blocks unauthenticated access to its ``.json`` endpoints, so live
+collection requires an app registered at https://www.reddit.com/prefs/apps
+(type "script"). Authentication uses the application-only
+``client_credentials`` grant, which needs no user login, and the bearer
+token is cached on the class until shortly before it expires.
+
+When no credentials are configured the scraper falls back to clearly
+labelled synthetic data (every item carries ``metadata.is_mock = True``)
+so demo output can never be mistaken for real Reddit content.
 """
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import random
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
 import structlog
 
+from app.config import settings
 from app.scrapers.base import BaseScraper
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+# Reddit OAuth2 endpoints
+_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
+_API_BASE = "https://oauth.reddit.com"
+_TOKEN_TTL_MARGIN = 60  # refresh this many seconds before expiry
 
 # ---------------------------------------------------------------------------
 #  Default subreddits to search when no product-specific sub is obvious
@@ -92,7 +112,11 @@ _AUTHORS: list[str] = [
 
 
 def _generate_mock_data(query: str, count: int) -> list[dict[str, Any]]:
-    """Generate realistic mock Reddit posts and comments."""
+    """Generate realistic mock Reddit posts and comments.
+
+    Every item is flagged ``is_mock`` so downstream consumers - and anyone
+    reading a report - can tell synthetic data from live data.
+    """
     product_name = query.replace("+", " ").title()
     items: list[dict[str, Any]] = []
 
@@ -108,7 +132,9 @@ def _generate_mock_data(query: str, count: int) -> list[dict[str, Any]]:
         content = template.format(product=product_name)
 
         days_ago = random.randint(1, 365)
-        post_date = (datetime.utcnow() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        post_date = (
+            datetime.now(timezone.utc) - timedelta(days=days_ago)
+        ).strftime("%Y-%m-%d")
 
         is_post = random.random() > 0.4  # 60% posts, 40% comments
 
@@ -117,6 +143,7 @@ def _generate_mock_data(query: str, count: int) -> list[dict[str, Any]]:
                 "source": "reddit",
                 "content": content,
                 "metadata": {
+                    "is_mock": True,
                     "subreddit": random.choice(_SUBREDDITS),
                     "score": random.randint(-5, 5000),
                     "author": random.choice(_AUTHORS),
@@ -140,174 +167,302 @@ def _generate_mock_data(query: str, count: int) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 class RedditScraper(BaseScraper):
-    """Scrapes Reddit posts and comments using PRAW.
+    """Collects Reddit posts and comments through the official OAuth2 API.
 
-    Falls back to realistic mock data when ``settings.DEBUG`` is ``True``,
-    when PRAW credentials are missing, or when live access fails.
+    Falls back to clearly labelled synthetic data when credentials are
+    missing, when ``settings.DEBUG`` is ``True``, or when live access
+    fails - unless ``settings.ALLOW_MOCK_DATA`` is ``False``, in which case
+    the failure is raised so the caller sees it.
     """
+
+    # Token is cached on the class so parallel scrapes share one login.
+    _token: str | None = None
+    _token_expires_at: float = 0.0
+    _token_lock: asyncio.Lock | None = None
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(request_delay=1.5, **kwargs)
         self.logger = log.bind(scraper="RedditScraper")
 
     # ------------------------------------------------------------------ #
-    #  PRAW client helper
+    #  OAuth2 (application-only / client_credentials)
     # ------------------------------------------------------------------ #
 
-    def _get_reddit_client(self) -> Any | None:
-        """Build a PRAW Reddit instance or return None."""
-        try:
-            from app.config import settings
+    @property
+    def _has_credentials(self) -> bool:
+        return bool(settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET)
 
-            client_id = getattr(settings, "REDDIT_CLIENT_ID", None)
-            client_secret = getattr(settings, "REDDIT_CLIENT_SECRET", None)
-            user_agent = getattr(
-                settings,
-                "REDDIT_USER_AGENT",
-                "AgentFlow:v1.0 (by /u/agentflow_bot)",
-            )
-            if not client_id or not client_secret:
-                return None
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        if cls._token_lock is None:
+            cls._token_lock = asyncio.Lock()
+        return cls._token_lock
 
-            import praw  # type: ignore[import-untyped]
-
-            return praw.Reddit(
-                client_id=client_id,
-                client_secret=client_secret,
-                user_agent=user_agent,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("reddit_client_init_failed", error=str(exc))
+    async def _get_access_token(self) -> str | None:
+        """Fetch (or reuse) an application-only bearer token."""
+        if not self._has_credentials:
             return None
 
+        if RedditScraper._token and time.monotonic() < RedditScraper._token_expires_at:
+            return RedditScraper._token
+
+        async with self._get_lock():
+            # Another coroutine may have refreshed the token while we waited.
+            if RedditScraper._token and time.monotonic() < RedditScraper._token_expires_at:
+                return RedditScraper._token
+
+            basic = base64.b64encode(
+                f"{settings.REDDIT_CLIENT_ID}:{settings.REDDIT_CLIENT_SECRET}".encode()
+            ).decode()
+
+            try:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    response = await client.post(
+                        _TOKEN_URL,
+                        data={"grant_type": "client_credentials"},
+                        headers={
+                            "Authorization": f"Basic {basic}",
+                            "User-Agent": settings.REDDIT_USER_AGENT,
+                        },
+                    )
+
+                if response.status_code != 200:
+                    self.logger.error(
+                        "reddit_auth_failed",
+                        status=response.status_code,
+                        body=response.text[:200],
+                    )
+                    return None
+
+                payload = response.json()
+                token = payload.get("access_token")
+                expires_in = int(payload.get("expires_in", 3600))
+
+                RedditScraper._token = token
+                RedditScraper._token_expires_at = (
+                    time.monotonic() + max(expires_in - _TOKEN_TTL_MARGIN, 60)
+                )
+                self.logger.info("reddit_auth_success", expires_in=expires_in)
+                return token
+
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("reddit_auth_error", error=str(exc))
+                return None
+
     # ------------------------------------------------------------------ #
-    #  Live scraping
+    #  Live collection
     # ------------------------------------------------------------------ #
 
-    async def _search_subreddits(
+    async def _get(
         self,
-        reddit: Any,
+        client: httpx.AsyncClient,
+        path: str,
+        params: dict[str, Any],
+    ) -> Any:
+        """GET an oauth.reddit.com path, honouring the API rate limit."""
+        try:
+            response = await client.get(f"{_API_BASE}{path}", params=params)
+
+            if response.status_code == 429:
+                self.logger.warning("reddit_rate_limited", path=path)
+                await asyncio.sleep(5)
+                return None
+            if response.status_code != 200:
+                self.logger.warning(
+                    "reddit_api_error", path=path, status=response.status_code
+                )
+                return None
+
+            # Back off proactively when the quota is nearly spent.
+            remaining = response.headers.get("x-ratelimit-remaining")
+            if remaining is not None:
+                try:
+                    if float(remaining) < 5:
+                        reset = float(response.headers.get("x-ratelimit-reset", 10))
+                        self.logger.info("reddit_quota_low", sleeping=reset)
+                        await asyncio.sleep(min(reset, 60))
+                except ValueError:
+                    pass
+
+            return response.json()
+
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("reddit_request_failed", path=path, error=str(exc))
+            return None
+
+    @staticmethod
+    def _post_item(data: dict[str, Any]) -> dict[str, Any]:
+        """Map a Reddit submission onto the common scraped-item shape."""
+        title = data.get("title") or ""
+        selftext = data.get("selftext") or ""
+        content = f"{title}\n\n{selftext}" if selftext else title
+
+        return {
+            "source": "reddit",
+            "content": content.strip(),
+            "metadata": {
+                "is_mock": False,
+                "subreddit": data.get("subreddit", ""),
+                "score": data.get("score", 0),
+                "author": data.get("author") or "[deleted]",
+                "date": datetime.fromtimestamp(
+                    data.get("created_utc", 0), tz=timezone.utc
+                ).strftime("%Y-%m-%d"),
+                "post_title": title,
+                "num_comments": data.get("num_comments", 0),
+                "permalink": data.get("permalink", ""),
+                "type": "post",
+            },
+        }
+
+    @staticmethod
+    def _comment_item(
+        data: dict[str, Any],
+        post_title: str,
+        subreddit: str,
+    ) -> dict[str, Any]:
+        """Map a Reddit comment onto the common scraped-item shape."""
+        return {
+            "source": "reddit",
+            "content": data.get("body", ""),
+            "metadata": {
+                "is_mock": False,
+                "subreddit": subreddit,
+                "score": data.get("score", 0),
+                "author": data.get("author") or "[deleted]",
+                "date": datetime.fromtimestamp(
+                    data.get("created_utc", 0), tz=timezone.utc
+                ).strftime("%Y-%m-%d"),
+                "post_title": post_title,
+                "num_comments": 0,
+                "type": "comment",
+            },
+        }
+
+    async def _fetch_comments(
+        self,
+        client: httpx.AsyncClient,
+        post: dict[str, Any],
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Fetch the top comments on one submission."""
+        post_id = post.get("id")
+        if not post_id:
+            return []
+
+        payload = await self._get(
+            client,
+            f"/comments/{post_id}",
+            {"limit": limit, "sort": "top", "depth": 1, "raw_json": 1},
+        )
+        # The comments endpoint returns [post_listing, comment_listing].
+        if not isinstance(payload, list) or len(payload) < 2:
+            return []
+
+        children = payload[1].get("data", {}).get("children", [])
+        items: list[dict[str, Any]] = []
+
+        for child in children[:limit]:
+            if child.get("kind") != "t1":  # skip "load more" stubs
+                continue
+            data = child.get("data", {})
+            body = data.get("body", "")
+            if len(body) > 10 and body not in ("[deleted]", "[removed]"):
+                items.append(
+                    self._comment_item(
+                        data, post.get("title", ""), post.get("subreddit", "")
+                    )
+                )
+
+        return items
+
+    async def _search_reddit(
+        self,
+        token: str,
         query: str,
         max_results: int,
     ) -> list[dict[str, Any]]:
-        """Search Reddit and collect posts + top comments."""
-        import asyncio
+        """Search Reddit site-wide and in topical subreddits, plus top comments."""
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "User-Agent": settings.REDDIT_USER_AGENT,
+        }
+        results: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
 
-        def _search() -> list[dict[str, Any]]:
-            results: list[dict[str, Any]] = []
+        # Site-wide search first, then narrow topical subreddits.
+        searches: list[tuple[str, dict[str, Any]]] = [
+            ("/search", {"q": query, "sort": "relevance", "t": "year",
+                         "limit": 25, "type": "link", "raw_json": 1})
+        ]
+        searches += [
+            (f"/r/{sub}/search",
+             {"q": query, "restrict_sr": 1, "sort": "relevance",
+              "t": "year", "limit": 10, "raw_json": 1})
+            for sub in _DEFAULT_SUBREDDITS
+        ]
 
-            # Search across relevant subreddits
-            subreddits_to_search = _DEFAULT_SUBREDDITS + [
-                query.replace(" ", "").lower()
-            ]
-
-            for sub_name in subreddits_to_search:
-                try:
-                    subreddit = reddit.subreddit(sub_name)
-                    for submission in subreddit.search(
-                        query, sort="relevance", time_filter="year", limit=10
-                    ):
-                        # Add the post itself
-                        results.append(
-                            {
-                                "source": "reddit",
-                                "content": (
-                                    f"{submission.title}\n\n{submission.selftext}"
-                                    if submission.selftext
-                                    else submission.title
-                                ),
-                                "metadata": {
-                                    "subreddit": sub_name,
-                                    "score": submission.score,
-                                    "author": str(submission.author) if submission.author else "[deleted]",
-                                    "date": datetime.utcfromtimestamp(
-                                        submission.created_utc
-                                    ).strftime("%Y-%m-%d"),
-                                    "post_title": submission.title,
-                                    "num_comments": submission.num_comments,
-                                    "type": "post",
-                                },
-                            }
-                        )
-
-                        # Fetch top comments
-                        submission.comment_sort = "best"
-                        submission.comments.replace_more(limit=0)
-                        for comment in submission.comments[:5]:
-                            if hasattr(comment, "body") and len(comment.body) > 10:
-                                results.append(
-                                    {
-                                        "source": "reddit",
-                                        "content": comment.body,
-                                        "metadata": {
-                                            "subreddit": sub_name,
-                                            "score": comment.score,
-                                            "author": str(comment.author) if comment.author else "[deleted]",
-                                            "date": datetime.utcfromtimestamp(
-                                                comment.created_utc
-                                            ).strftime("%Y-%m-%d"),
-                                            "post_title": submission.title,
-                                            "num_comments": 0,
-                                            "type": "comment",
-                                        },
-                                    }
-                                )
-
-                        if len(results) >= max_results:
-                            break
-
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "reddit_subreddit_error",
-                        subreddit=sub_name,
-                        error=str(exc),
-                    )
-                    continue
-
+        async with httpx.AsyncClient(headers=headers, timeout=25) as client:
+            for path, params in searches:
                 if len(results) >= max_results:
                     break
 
-            return results[:max_results]
+                payload = await self._get(client, path, params)
+                if not isinstance(payload, dict):
+                    continue
 
-        return await asyncio.get_event_loop().run_in_executor(None, _search)
+                for child in payload.get("data", {}).get("children", []):
+                    if len(results) >= max_results:
+                        break
+
+                    data = child.get("data", {})
+                    post_id = data.get("id")
+                    if not post_id or post_id in seen_ids:
+                        continue
+                    seen_ids.add(post_id)
+
+                    results.append(self._post_item(data))
+
+                    # Comments are where the real opinions live.
+                    if len(results) < max_results:
+                        results.extend(await self._fetch_comments(client, data))
+
+                await asyncio.sleep(self.request_delay)
+
+        self.logger.info("reddit_results_collected", count=len(results))
+        return results[:max_results]
 
     # ------------------------------------------------------------------ #
     #  Main implementation
     # ------------------------------------------------------------------ #
+
+    def _mock(self, query: str, max_results: int, reason: str) -> list[dict[str, Any]]:
+        """Return labelled synthetic data, or fail loudly if mocks are disabled."""
+        if not settings.ALLOW_MOCK_DATA:
+            raise RuntimeError(
+                f"Reddit scraping unavailable ({reason}) and ALLOW_MOCK_DATA is False"
+            )
+        self.logger.info("reddit_fallback_mock", reason=reason)
+        count = random.randint(30, max(30, min(50, max_results)))
+        return _generate_mock_data(query, count)
 
     async def _scrape_impl(
         self,
         query: str,
         max_results: int,
     ) -> list[dict[str, Any]]:
-        # Check DEBUG flag
-        try:
-            from app.config import settings
+        if settings.DEBUG:
+            return self._mock(query, max_results, "DEBUG=True")
 
-            if getattr(settings, "DEBUG", False):
-                self.logger.info("reddit_demo_mode", reason="DEBUG=True")
-                count = random.randint(30, min(50, max_results))
-                return _generate_mock_data(query, count)
-        except ImportError:
-            pass
+        if not self._has_credentials:
+            return self._mock(query, max_results, "no_credentials")
 
-        reddit = self._get_reddit_client()
-        if reddit is None:
-            self.logger.info("reddit_fallback_mock", reason="no_credentials")
-            count = random.randint(30, min(50, max_results))
-            return _generate_mock_data(query, count)
+        token = await self._get_access_token()
+        if token is None:
+            return self._mock(query, max_results, "auth_failed")
 
-        try:
-            results = await self._search_subreddits(reddit, query, max_results)
-            if not results:
-                self.logger.info("reddit_fallback_mock", reason="no_results")
-                count = random.randint(30, min(50, max_results))
-                return _generate_mock_data(query, count)
+        results = await self._search_reddit(token, query, max_results)
+        if not results:
+            return self._mock(query, max_results, "no_results")
 
-            self.logger.info("reddit_results_collected", count=len(results))
-            return results
-
-        except Exception as exc:  # noqa: BLE001
-            self.logger.error("reddit_scrape_error", error=str(exc))
-            count = random.randint(30, min(50, max_results))
-            return _generate_mock_data(query, count)
+        return results
