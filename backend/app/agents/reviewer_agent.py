@@ -22,7 +22,10 @@ async def reviewer_node(state: AgentState) -> AgentState:
     state["revision_count"] = revision_count + 1
     
     # If we've revised too many times, force approve to prevent infinite loops
-    if revision_count >= 2:
+    if revision_count >= settings.MAX_REPORT_REVISIONS:
+        logger.warning(
+            f"Max revisions ({settings.MAX_REPORT_REVISIONS}) reached; auto-approving report"
+        )
         state["review_feedback"] = {
             "approved": True,
             "feedback": "Auto-approved due to max revisions reached.",
