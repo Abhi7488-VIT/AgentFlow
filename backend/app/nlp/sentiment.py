@@ -1,55 +1,108 @@
-"""Sentiment analysis with rule-based fallback."""
+"""Sentiment analysis using VADER.
+
+VADER (Valence Aware Dictionary and sEntiment Reasoner) is a lexicon and
+rule-based analyser tuned for exactly the kind of text this project
+collects - product reviews, Reddit comments, YouTube comments. Unlike a
+bag-of-words count it understands:
+
+    * negation           "not good"          -> negative
+    * intensifiers       "very good"         -> stronger positive
+    * contrast           "good but pricey"   -> weights the second clause
+    * emphasis           "GREAT!!!"          -> stronger positive
+    * emoji and slang    ":)", "meh"
+
+It needs no model download and no torch, which keeps the container small
+enough to run on a memory-constrained host.
+
+The ``score`` returned is VADER's ``compound`` value in [-1, 1], so scores
+can be averaged directly to get net sentiment for a corpus.
+"""
 
 import asyncio
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# VADER's documented thresholds for classifying the compound score.
+POSITIVE_THRESHOLD = 0.05
+NEGATIVE_THRESHOLD = -0.05
+
+# Above this many texts, analysis moves off the event loop.
+_THREAD_THRESHOLD = 200
+
+
 class SentimentAnalyzer:
+    """Singleton VADER analyser. The lexicon is loaded once and reused."""
+
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SentimentAnalyzer, cls).__new__(cls)
-            cls._instance.pipeline = None
-            logger.info("Using lightweight fallback sentiment analyzer (OOM prevention)")
+            cls._instance.analyzer = SentimentIntensityAnalyzer()
+            logger.info("SentimentAnalyzer ready (VADER lexicon)")
         return cls._instance
 
     async def analyze(self, texts: list[str]) -> list[dict]:
+        """Score every text. Always returns one result per input."""
         if not texts:
             return []
-            
-        if self.pipeline is None:
-            logger.warning("Pipeline not loaded, using fallback rule-based sentiment")
-            return [self._fallback_analyze(text) for text in texts]
-            
+
+        if len(texts) > _THREAD_THRESHOLD:
+            return await asyncio.to_thread(self._analyze_all, texts)
+        return self._analyze_all(texts)
+
+    def _analyze_all(self, texts: list[str]) -> list[dict]:
+        return [self.analyze_one(text) for text in texts]
+
+    def analyze_one(self, text: str) -> dict:
+        """Score a single text.
+
+        Returns the compound score plus the positive/neutral/negative
+        proportions, so callers can show *why* something was classified
+        the way it was rather than just a bare label.
+        """
+        if not text or not text.strip():
+            return {
+                "label": "NEUTRAL",
+                "score": 0.0,
+                "confidence": 0.0,
+                "positive": 0.0,
+                "neutral": 1.0,
+                "negative": 0.0,
+            }
+
         try:
-            # Run in executor to avoid blocking the event loop
-            results = await asyncio.to_thread(self.pipeline, texts)
-            
-            # Format output consistently
-            formatted_results = []
-            for res in results:
-                formatted_results.append({
-                    "label": res["label"],
-                    "score": res["score"]
-                })
-            return formatted_results
+            scores = self.analyzer.polarity_scores(text)
         except Exception as e:
-            logger.error(f"Error during sentiment analysis: {e}")
-            return [self._fallback_analyze(text) for text in texts]
-            
-    def _fallback_analyze(self, text: str) -> dict:
-        text_lower = text.lower()
-        positive_words = ['good', 'great', 'excellent', 'amazing', 'love', 'best', 'awesome', 'perfect']
-        negative_words = ['bad', 'terrible', 'awful', 'hate', 'worst', 'poor', 'disappointing', 'junk']
-        
-        pos_count = sum(1 for word in positive_words if word in text_lower)
-        neg_count = sum(1 for word in negative_words if word in text_lower)
-        
-        if pos_count > neg_count:
-            return {"label": "POSITIVE", "score": 0.8}
-        elif neg_count > pos_count:
-            return {"label": "NEGATIVE", "score": 0.8}
+            logger.error(f"Sentiment scoring failed: {e}")
+            return {
+                "label": "NEUTRAL", "score": 0.0, "confidence": 0.0,
+                "positive": 0.0, "neutral": 1.0, "negative": 0.0,
+            }
+
+        compound = scores["compound"]
+
+        if compound >= POSITIVE_THRESHOLD:
+            label = "POSITIVE"
+        elif compound <= NEGATIVE_THRESHOLD:
+            label = "NEGATIVE"
         else:
-            return {"label": "NEUTRAL", "score": 0.5}
+            label = "NEUTRAL"
+
+        return {
+            "label": label,
+            "score": round(compound, 4),
+            # Distance from neutral: how strongly VADER committed.
+            "confidence": round(abs(compound), 4),
+            "positive": scores["pos"],
+            "neutral": scores["neu"],
+            "negative": scores["neg"],
+        }
+
+    def score_only(self, text: str) -> float:
+        """Compound score alone - convenient for aggregation."""
+        return self.analyze_one(text)["score"]

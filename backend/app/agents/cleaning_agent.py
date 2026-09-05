@@ -2,10 +2,21 @@
 
 import time
 import re
+
+from langdetect import DetectorFactory, LangDetectException, detect
+
 from app.agents.state import AgentState
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# langdetect samples randomly; seeding makes the same text always classify
+# the same way, so a workflow re-run produces the same corpus.
+DetectorFactory.seed = 0
+
+# Below this many characters there is not enough signal to classify, so we
+# keep the text rather than throwing away short comments like "battery died".
+MIN_CHARS_FOR_DETECTION = 25
 
 def clean_text(text: str) -> str:
     if not text:
@@ -18,13 +29,30 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def is_english_simple(text: str) -> bool:
-    # Very simple heuristic for english detection
-    # In a real app use langdetect or fasttext
-    common_words = {'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this'}
-    words = set(text.lower().split())
-    # If at least 1 common English word is present, or text is too short to tell
-    return len(words.intersection(common_words)) > 0 or len(words) < 5
+def is_english(text: str) -> bool:
+    """Detect English using langdetect (naive Bayes over character n-grams).
+
+    Short strings are kept rather than discarded: below ~25 characters the
+    detector is unreliable, and dropping them would silently throw away
+    terse but useful feedback.
+    """
+    if not text or not text.strip():
+        return False
+
+    stripped = text.strip()
+    if len(stripped) < MIN_CHARS_FOR_DETECTION:
+        return True
+
+    try:
+        return detect(stripped) == "en"
+    except LangDetectException:
+        # No detectable features (emoji only, digits only, etc.) - keep it
+        # and let downstream sentiment scoring decide it is neutral.
+        return True
+
+
+# Backwards-compatible alias for the previous heuristic name.
+is_english_simple = is_english
 
 async def cleaning_node(state: AgentState) -> AgentState:
     logger.info("Agent starting: Cleaning", workflow_id=state.get("workflow_id"))
