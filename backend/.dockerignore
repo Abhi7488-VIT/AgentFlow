@@ -1,0 +1,33 @@
+# Secrets - the Dockerfile does COPY . ., so without this an .env sitting
+# in the build context is baked into the image layer permanently.
+.env
+.env.*
+!.env.example
+
+# Local data stores
+*.db
+*.sqlite3
+chroma_data/
+mlruns/
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+
+# Tests are not needed in the runtime image
+tests/
+
+# Tooling
+.git/
+.gitignore
+.github/
+*.md
+!README.md
