@@ -1,6 +1,8 @@
 """LangGraph workflow graph definition and execution."""
 
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
+from app.config import settings
 from app.agents.state import AgentState
 from app.agents.research_agent import research_node
 from app.agents.cleaning_agent import cleaning_node
@@ -8,8 +10,11 @@ from app.agents.nlp_agent import nlp_node
 from app.agents.insight_agent import insight_node
 from app.agents.report_agent import report_node
 from app.agents.reviewer_agent import reviewer_node
+from app.core.logging import get_logger
 
-def create_workflow_graph() -> StateGraph:
+logger = get_logger(__name__)
+
+def create_workflow_graph() -> CompiledStateGraph:
     workflow = StateGraph(AgentState)
     
     # Add nodes
@@ -28,10 +33,22 @@ def create_workflow_graph() -> StateGraph:
     workflow.add_edge('insights', 'report')
     workflow.add_edge('report', 'reviewer')
     
-    # Conditional: reviewer can approve or send back for revision
+    # Conditional: reviewer can approve or send back for revision.
     def should_continue(state: AgentState) -> str:
-        if state.get('review_feedback', {}).get('approved', False):
+        feedback = state.get('review_feedback') or {}
+        if feedback.get('approved', False):
             return 'end'
+
+        # Hard stop independent of the reviewer's answer. The reviewer node
+        # caps revisions too, but if it ever returns malformed JSON this
+        # guarantees the report -> reviewer loop still terminates.
+        revisions = state.get('revision_count', 0)
+        if revisions > settings.MAX_REPORT_REVISIONS:
+            logger.warning(
+                f"Revision cap hit in graph router after {revisions} passes; ending workflow"
+            )
+            return 'end'
+
         return 'report'
         
     workflow.add_conditional_edges(

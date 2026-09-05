@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.scheduler import compute_next_run
 from app.models.scheduled_task import ScheduledTask
 from app.schemas.schedule import ScheduleCreate
 
@@ -13,7 +14,11 @@ async def create_schedule(db: AsyncSession, user_id, schedule_data: ScheduleCrea
         schedule_type=schedule_data.schedule_type,
         cron_expression=schedule_data.cron_expression,
         sources=schedule_data.sources,
-        is_active=True
+        is_active=True,
+        # Without this the row is never due and the schedule never fires.
+        next_run_at=compute_next_run(
+            schedule_data.schedule_type, schedule_data.cron_expression
+        ),
     )
     db.add(schedule)
     await db.commit()

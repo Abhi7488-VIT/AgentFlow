@@ -1,7 +1,7 @@
 """Background task worker - executes LangGraph workflows and persists results."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -14,6 +14,8 @@ from app.models.report import Report
 from app.models.agent_log import AgentLog
 from app.agents.graph import run_workflow
 from app.core.logging import get_logger
+from app.rag.indexer import index_workflow_items
+from app.core.tracking import log_workflow_run
 
 logger = get_logger(__name__)
 
@@ -30,7 +32,7 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
             await db.execute(
                 update(Workflow)
                 .where(Workflow.id == workflow_id)
-                .values(status="running", started_at=datetime.utcnow())
+                .values(status="running", started_at=datetime.now(timezone.utc))
             )
             await db.commit()
             
@@ -38,6 +40,7 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
             final_state = await run_workflow(query, sources, str(workflow_id))
             
             # Save scraped data
+            scraped_rows = []
             for item in final_state.get("cleaned_data", []):
                 # Simple sentiment aggregation from item
                 label = item.get("sentiment_label")
@@ -52,6 +55,29 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                     sentiment_label=label
                 )
                 db.add(db_scraped)
+                scraped_rows.append(db_scraped)
+
+            # Flush so every row has its primary key, then index the corpus
+            # into ChromaDB. Chunk ids are derived from these ids, which is
+            # what lets a retrieved chunk be traced back to its source row.
+            index_stats = {}
+            if scraped_rows:
+                await db.flush()
+                index_stats = await index_workflow_items(
+                    db,
+                    workflow_id,
+                    [
+                        {
+                            "id": row.id,
+                            "content": row.content,
+                            "source": row.source,
+                            "metadata": row.metadata_ or {},
+                            "sentiment_label": row.sentiment_label,
+                            "sentiment_score": row.sentiment_score,
+                        }
+                        for row in scraped_rows
+                    ],
+                )
                 
             # Save analytics
             if final_state.get("sentiment_results"):
@@ -111,7 +137,7 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                     input_data=log.get("input_data"),
                     output_data=log.get("output_data"),
                     execution_time_ms=log.get("execution_time_ms"),
-                    started_at=datetime.utcnow() # Approximation
+                    started_at=datetime.now(timezone.utc) # Approximation
                 )
                 db.add(db_log)
                 agent_states_dict[log.get("agent_name")] = log.get("status")
@@ -125,14 +151,21 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                 .where(Workflow.id == workflow_id)
                 .values(
                     status=workflow_status, 
-                    completed_at=datetime.utcnow(),
+                    completed_at=datetime.now(timezone.utc),
                     result_summary=result_summary,
                     agent_states=agent_states_dict
                 )
             )
             
             await db.commit()
-            logger.info(f"Background task completed for workflow {workflow_id}")
+
+            # Best-effort experiment tracking; never fails the workflow.
+            log_workflow_run(workflow_id, query, sources, final_state, index_stats)
+
+            logger.info(
+                f"Background task completed for workflow {workflow_id} "
+                f"(indexed {index_stats.get('chunks', 0)} chunks for RAG)"
+            )
 
     except Exception as e:
         logger.error(f"Background task failed for workflow {workflow_id}: {e}")
@@ -141,7 +174,7 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                 await db.execute(
                     update(Workflow)
                     .where(Workflow.id == workflow_id)
-                    .values(status="failed", result_summary=str(e), completed_at=datetime.utcnow())
+                    .values(status="failed", result_summary=str(e), completed_at=datetime.now(timezone.utc))
                 )
                 await db.commit()
         except Exception as inner_e:

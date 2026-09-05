@@ -24,9 +24,9 @@
 
 ## About
 
-**AgentFlow AI** is a production-grade, multi-agent market intelligence platform that leverages cutting-edge AI orchestration to provide comprehensive market analysis. Built with **LangGraph** for sophisticated agent workflow management and powered by **Google Gemini**, the platform autonomously scrapes, processes, and analyzes data from YouTube, Reddit, news outlets, and more.
+**AgentFlow AI** is a production-grade, multi-agent market intelligence platform that leverages cutting-edge AI orchestration to provide comprehensive market analysis. Built with **LangGraph** for sophisticated agent workflow management and powered by **Google Gemini**, the platform autonomously scrapes, processes, and analyzes data from Amazon, YouTube, and Reddit.
 
-The platform employs **Retrieval-Augmented Generation (RAG)** with ChromaDB for contextual analysis, ensuring insights are grounded in real data. A beautiful **React + TypeScript** dashboard provides interactive visualizations, while **MLflow** tracks experiment performance and **Prometheus + Grafana** deliver enterprise-grade observability.
+Every completed workflow is embedded into its own ChromaDB collection, so the corpus behind a report stays queryable: **Retrieval-Augmented Generation (RAG)** answers follow-up questions using only that workflow's data, with inline source citations. A **React + TypeScript** dashboard provides interactive visualizations, and **Prometheus + Grafana** deliver request-level observability.
 
 Whether you're tracking competitor movements, analyzing market sentiment, or discovering emerging trends — AgentFlow AI provides the intelligence you need, when you need it.
 
@@ -35,11 +35,13 @@ Whether you're tracking competitor movements, analyzing market sentiment, or dis
 ## Features
 
 - 🤖 **Multi-Agent Orchestration** — LangGraph-powered agent workflows with dynamic task routing and parallel execution
-- 📊 **Real-Time Market Intelligence** — Continuous monitoring of YouTube, Reddit, news, and social media sources
-- 🧠 **RAG-Powered Analysis** — ChromaDB vector storage with context-aware retrieval for grounded insights
+- 📊 **Multi-Source Collection** — Concurrent collection from Amazon (detail-page review scraping), YouTube (Data API v3, falling back to keyless innertube), and Reddit (OAuth2 API)
+- 🧠 **RAG-Powered Q&A** — Per-workflow ChromaDB collections with Gemini embeddings, similarity-filtered retrieval, and cited answers
+- 🔬 **Real NLP Pipeline** — VADER sentiment (handles negation and intensifiers), TF-IDF keyword extraction with per-keyword sentiment, NMF topic modelling, and regression-based trend detection
 - 🎨 **Interactive Dashboard** — React + TypeScript UI with real-time data visualization and workflow management
 - 🔄 **Workflow Management** — Create, monitor, and control complex multi-agent analysis pipelines
-- 📈 **Comprehensive Monitoring** — Prometheus metrics, Grafana dashboards, and MLflow experiment tracking
+- 📈 **Observability** — Prometheus request metrics at `/metrics`, Grafana dashboards, structured JSON logging, and MLflow tracking of every workflow run (live-data ratio, per-agent latency, sentiment, revisions)
+- 🛡️ **Honest Data Provenance** — Every collected item is flagged `is_mock`, so synthetic demo data can never be mistaken for real data; set `ALLOW_MOCK_DATA=false` to make a source failure raise instead
 - 🔐 **Enterprise Security** — JWT authentication, rate limiting, CORS, and security headers
 - 🐳 **One-Command Deployment** — Full Docker Compose stack with health checks and auto-restart
 
@@ -51,10 +53,11 @@ Whether you're tracking competitor movements, analyzing market sentiment, or dis
 |:---|:---|
 | **Backend** | Python 3.11 · FastAPI · SQLAlchemy · Alembic · Pydantic |
 | **Frontend** | React 19 · TypeScript · Vite · Tailwind CSS · Zustand · Axios · Recharts |
-| **AI / ML** | Google Gemini · LangGraph · LangChain · ChromaDB (RAG) |
+| **AI / ML** | Google Gemini (chat + embeddings) · LangGraph · LangChain · ChromaDB (RAG) |
+| **NLP** | VADER (sentiment) · scikit-learn TF-IDF + NMF (keywords, topics) · langdetect |
 | **Database** | PostgreSQL 16 · ChromaDB (Vector Store) |
-| **Monitoring** | Prometheus · Grafana · MLflow · Structured Logging |
-| **DevOps** | Docker · Docker Compose · Nginx · GitHub Actions · Makefile |
+| **Monitoring** | Prometheus · Grafana · MLflow (per-run experiment tracking) · structlog |
+| **DevOps** | Docker · Docker Compose · Nginx · GitHub Actions · Alembic · Makefile |
 
 ---
 
@@ -72,63 +75,62 @@ graph TB
 
     subgraph Backend
         API[FastAPI Server]
-        AUTH[Auth Middleware]
+        AUTH[JWT Auth + RBAC]
         WF[Workflow Engine]
+        RAGAPI[RAG Q&A API]
     end
 
-    subgraph AI Engine
-        LG[LangGraph Orchestrator]
-        YTA[YouTube Agent]
-        RDA[Reddit Agent]
-        NWA[News Agent]
-        ANA[Analysis Agent]
+    subgraph "LangGraph Pipeline"
+        RES[Research Agent]
+        CLN[Cleaning Agent]
+        NLP[NLP Agent]
+        INS[Insight Agent]
+        REP[Report Agent]
+        REV[Reviewer Agent]
     end
 
-    subgraph Data Layer
+    subgraph "External Sources"
+        AZ[Amazon]
+        YT[YouTube Data API]
+        RD[Reddit OAuth2 API]
+    end
+
+    subgraph "Data Layer"
         PG[(PostgreSQL)]
         CR[(ChromaDB)]
-        GEM[Google Gemini API]
+        GEM[Google Gemini]
     end
 
     subgraph Monitoring
         PROM[Prometheus]
         GRAF[Grafana]
-        MLF[MLflow]
-    end
-
-    subgraph External Sources
-        YT[YouTube API]
-        RD[Reddit API]
-        NW[News Sources]
     end
 
     UI --> NG
     NG --> API
     API --> AUTH
     API --> WF
-    WF --> LG
-    LG --> YTA & RDA & NWA & ANA
-    YTA --> YT
-    RDA --> RD
-    NWA --> NW
-    ANA --> GEM
-    ANA --> CR
-    API --> PG
-    LG --> CR
+    API --> RAGAPI
+
+    WF --> RES
+    RES --> CLN --> NLP --> INS --> REP --> REV
+    REV -->|not approved, under cap| REP
+    REV -->|approved or cap hit| PG
+
+    RES --> AZ & YT & RD
+    INS & REP & REV --> GEM
+
+    PG -->|chunk + embed| CR
+    RAGAPI -->|retrieve top-k| CR
+    RAGAPI -->|grounded answer| GEM
+
     API --> PROM
     PROM --> GRAF
-    LG --> MLF
 
     style UI fill:#61DAFB,stroke:#333,color:#000
-    style NG fill:#009639,stroke:#333,color:#fff
-    style API fill:#009688,stroke:#333,color:#fff
-    style LG fill:#6C63FF,stroke:#333,color:#fff
-    style PG fill:#4169E1,stroke:#333,color:#fff
     style CR fill:#FF6B6B,stroke:#333,color:#fff
     style GEM fill:#4285F4,stroke:#333,color:#fff
-    style PROM fill:#E6522C,stroke:#333,color:#fff
-    style GRAF fill:#F46800,stroke:#333,color:#fff
-    style MLF fill:#0194E2,stroke:#333,color:#fff
+    style REV fill:#FFD93D,stroke:#333,color:#000
 ```
 
 ---
@@ -138,9 +140,23 @@ graph TB
 ### Prerequisites
 - **Python** 3.11+
 - **Node.js** 20+
+- **Docker** (optional, for the full stack)
 - **Git**
 
-### 1. Setup Backend
+### 1. Configure environment
+
+Every other step depends on this one — `docker-compose.yml` reads `.env`,
+and the backend loads it through pydantic-settings.
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` and set `GEMINI_API_KEY`. That single key powers report
+generation, insight extraction, and RAG embeddings. Everything else is
+optional — see [Data sources](#data-sources) below.
+
+### 2. Setup Backend
 
 ```bash
 cd backend
@@ -148,21 +164,56 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
+# Create the database schema
+alembic upgrade head
+
 # Start the API server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Setup Frontend
+The first account you register becomes the admin; everyone after is a
+regular user.
+
+### 3. Setup Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
+
+### Run the full stack with Docker
+
+```bash
+cp .env.example .env    # required — compose will not start without it
+docker compose up --build
+```
+
+Brings up 8 services: PostgreSQL, backend, frontend, ChromaDB, MLflow,
+Prometheus, Grafana, and Nginx.
+
+### Running tests
+
+```bash
+cd backend && pytest -q
+```
+
+The suite is deliberately offline — it needs no API keys and makes no
+network calls, so it runs identically locally and in CI.
+
+---
+
+## Data sources
+
+| Source | Credentials | Behaviour without them |
+|:---|:---|:---|
+| **YouTube** | None required | Live. Uses the Data API when `YOUTUBE_API_KEY` is set, otherwise innertube — youtube.com's own JSON API |
+| **Amazon** | None required | Live. Session-warmed detail-page scraping across 3 marketplaces |
+| **Reddit** | **Required** | Falls back to synthetic data. Reddit blocks all unauthenticated access, so live collection needs an app from [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) (type "script") |
+
+Every collected item carries `metadata.is_mock`, so synthetic demo data is
+always distinguishable from real data. Set `ALLOW_MOCK_DATA=false` to make
+a source failure raise instead of silently falling back.
 
 ### Using Make
 
@@ -195,9 +246,11 @@ AgentFlow AI provides interactive API documentation:
 | `GET` | `/api/reports/` | Retrieve analysis reports |
 | `GET` | `/api/reports/{id}/export/pdf` | Export a report as PDF |
 | `GET` | `/api/dashboard/overview` | Aggregate dashboard metrics |
-| `POST` | `/api/rag/query` | Ask a question over indexed workflow data |
+| `POST` | `/api/rag/query` | Ask a question answered only from a workflow's own corpus |
+| `POST` | `/api/rag/index` | Rebuild a workflow's vector index |
+| `GET` | `/api/rag/status/{id}` | Whether a workflow's corpus is queryable |
 | `GET` | `/api/monitoring/health` | Health check |
-| `GET` | `/metrics` | Prometheus metrics endpoint |
+| `GET` | `/metrics/` | Prometheus metrics endpoint |
 
 ---
 

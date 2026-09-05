@@ -120,22 +120,122 @@ def safe_query_for_prompt(query: str) -> str:
     return safe
 
 
+def _balanced_object(text: str) -> str | None:
+    """Return the first brace-balanced object, ignoring braces inside strings."""
+    start = text.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+
+    return None
+
+
+def _repair_json(text: str) -> str:
+    """Fix the malformations LLMs actually produce.
+
+    Seen in practice: trailing commas before a closing bracket, curly
+    quotes copied from prose, and raw newlines inside string values -
+    which JSON forbids but a model writing a multi-paragraph summary
+    emits freely.
+    """
+    # Curly quotes used where JSON needs straight ones.
+    text = text.replace("“", '"').replace("”", '"')
+    text = text.replace("‘", "'").replace("’", "'")
+
+    # Trailing commas: {"a": 1,} or [1, 2,]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+
+    # Escape control characters appearing inside string literals.
+    control_map = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    out: list[str] = []
+    in_string = False
+    escaped = False
+
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            elif char in control_map:
+                out.append(control_map[char])
+                continue
+        elif char == '"':
+            in_string = True
+        out.append(char)
+
+    return "".join(out)
+
+
 def extract_json(text: str) -> dict:
+    """Extract a JSON object from an LLM response.
+
+    Models return JSON wrapped in markdown fences, with prose either side
+    of it, with trailing commas, or with raw newlines inside strings. Each
+    strategy below handles one of those and they are tried cheapest first,
+    so the caller only sees a failure if every one of them fails.
     """
-    Safely extract JSON from an LLM response, handling markdown fences.
-    Sometimes Gemini returns ```json { ... } ``` even when mime_type is json.
-    """
-    try:
-        # First try direct parse
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # If it fails, strip markdown json block
-        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL | re.IGNORECASE)
-        if match:
-            return json.loads(match.group(1).strip())
-        # If still no match, try to find first { and last }
-        start_idx = text.find('{')
-        end_idx = text.rfind('}')
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            return json.loads(text[start_idx:end_idx+1])
-        raise ValueError(f"Could not extract JSON from text: {text[:100]}...")
+    if not text:
+        raise ValueError("Cannot extract JSON from empty text")
+
+    candidates: list[str] = [text]
+
+    # Content inside a ```json ... ``` fence.
+    fence = re.search(r"```(?:json)?(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if fence:
+        candidates.append(fence.group(1).strip())
+
+    # The first brace-balanced object, ignoring braces inside strings.
+    balanced = _balanced_object(text)
+    if balanced:
+        candidates.append(balanced)
+
+    # Greedy slice from the first { to the last }.
+    start_idx, end_idx = text.find("{"), text.rfind("}")
+    if start_idx != -1 and end_idx > start_idx:
+        candidates.append(text[start_idx:end_idx + 1])
+
+    # strict=False tolerates control characters inside strings.
+    parsers = (
+        lambda c: json.loads(c),
+        lambda c: json.loads(c, strict=False),
+        lambda c: json.loads(_repair_json(c), strict=False),
+    )
+
+    for candidate in candidates:
+        if not candidate or not candidate.strip():
+            continue
+        for parser in parsers:
+            try:
+                parsed = parser(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, ValueError, TypeError):
+                continue
+
+    raise ValueError(f"Could not extract JSON from text: {text[:100]}...")

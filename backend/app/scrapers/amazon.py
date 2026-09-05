@@ -1,5 +1,16 @@
 """
-Amazon product-review scraper with realistic demo/mock mode.
+Amazon product-review scraper.
+
+Amazon publishes no public product API and actively blocks automation, so
+this module is a real scraper: it warms a browser-like session, rotates
+fingerprints, walks several marketplaces, and detects block pages rather
+than parsing them as results.
+
+Reviews come from the product detail page - Amazon's dedicated
+``/product-reviews/`` endpoint now redirects anonymous visitors to a
+sign-in wall, while the detail page still embeds a dozen or so reviews.
+
+Synthetic data is the last resort and is always flagged ``is_mock``.
 """
 
 from __future__ import annotations
@@ -7,13 +18,17 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote_plus
 
+import httpx
 import structlog
+from bs4 import BeautifulSoup
 
+from app.config import settings
 from app.scrapers.base import BaseScraper
+from app.scrapers.web import browser_headers, new_client, parse_count
 
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -117,7 +132,7 @@ def _generate_mock_reviews(query: str, count: int) -> list[dict[str, Any]]:
         rating = min(5.0, max(1.0, rating))
 
         days_ago = random.randint(1, 365)
-        review_date = (datetime.utcnow() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        review_date = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d")
         verified = random.random() > 0.25  # 75% verified
 
         reviews.append(
@@ -125,6 +140,7 @@ def _generate_mock_reviews(query: str, count: int) -> list[dict[str, Any]]:
                 "source": "amazon",
                 "content": content,
                 "metadata": {
+                    "is_mock": True,
                     "rating": rating,
                     "title": random.choice(_MOCK_TITLES),
                     "date": review_date,
@@ -139,196 +155,356 @@ def _generate_mock_reviews(query: str, count: int) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+#  Page parsing helpers
+# ---------------------------------------------------------------------------
+
+# Phrases Amazon serves instead of content when it decides you are a bot.
+_BLOCK_MARKERS: tuple[str, ...] = (
+    "sorry, something went wrong",
+    "enter the characters you see",
+    "automated access",
+    "api-services-support@amazon.com",
+    "robot check",
+    "amazon sign-in",
+)
+
+_MONTHS: dict[str, int] = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+    "december": 12,
+}
+
+
+def _is_blocked(html: str) -> str | None:
+    """Return the marker that identifies a block page, if any."""
+    lowered = html.lower()
+    for marker in _BLOCK_MARKERS:
+        if marker in lowered:
+            return marker
+    return None
+
+
+def _parse_review_date(text: str) -> str:
+    """Parse 'Reviewed in India on 26 August 2025' into '2025-08-26'.
+
+    Amazon localises this string per marketplace, so the country is
+    skipped and only the trailing date is read.
+    """
+    if not text:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    match = re.search(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", text)
+    if match:
+        day, month_name, year = match.groups()
+        month = _MONTHS.get(month_name.lower())
+        if month:
+            try:
+                return datetime(int(year), month, int(day)).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+    # US format: "Reviewed in the United States on August 26, 2025"
+    match = re.search(r"([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})", text)
+    if match:
+        month_name, day, year = match.groups()
+        month = _MONTHS.get(month_name.lower())
+        if month:
+            try:
+                return datetime(int(year), month, int(day)).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _parse_rating(text: str) -> float | None:
+    """'4.0 out of 5 stars' -> 4.0"""
+    if not text:
+        return None
+    match = re.search(r"([\d.]+)\s*out of\s*5", text)
+    if not match:
+        return None
+    try:
+        return max(1.0, min(5.0, float(match.group(1))))
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
 #  Scraper implementation
 # ---------------------------------------------------------------------------
 
 class AmazonScraper(BaseScraper):
-    """Scrapes Amazon product search results and reviews.
+    """Scrapes Amazon product search results and customer reviews.
 
-    Falls back to realistic mock data when ``settings.DEBUG`` is ``True``
-    or when live scraping encounters errors (anti-bot, network issues, etc.).
+    Amazon has no public product API and actively blocks automation, so
+    this is a genuine scraper and is written accordingly:
+
+    * a session is warmed on the marketplace home page first, so search
+      requests carry the cookies a real browser would have;
+    * headers rotate across a pool of real browser fingerprints, and a
+      ``Referer`` is set so navigation looks like it came from the site;
+    * several marketplaces are tried in turn, because a block is usually
+      per-domain rather than global;
+    * block pages are detected explicitly instead of being parsed as if
+      they were results.
+
+    Reviews are read from the **product detail page**. Amazon's dedicated
+    ``/product-reviews/`` endpoint now redirects to a sign-in wall, while
+    the detail page still embeds a dozen or so reviews for anonymous
+    visitors.
     """
 
-    SEARCH_URL = "https://www.amazon.com/s?k={query}"
+    # Tried in order. A block tends to be per-marketplace.
+    MARKETPLACES: tuple[str, ...] = ("amazon.com", "amazon.in", "amazon.co.uk")
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(request_delay=2.0, **kwargs)
         self.logger = log.bind(scraper="AmazonScraper")
 
     # ------------------------------------------------------------------ #
-    #  Live scraping helpers
+    #  Fetching
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _build_headers() -> dict[str, str]:
-        return {
-            "User-Agent": _random_ua(),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-        }
-
-    async def _fetch_page(self, url: str) -> str | None:
-        """Fetch a page via httpx, returning HTML or None on failure."""
+    async def _get(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict[str, Any] | None = None,
+        referer: str | None = None,
+    ) -> str | None:
+        """Fetch a page, returning HTML only if it is not a block page."""
         try:
-            import httpx
-
-            async with httpx.AsyncClient(
-                headers=self._build_headers(),
-                follow_redirects=True,
-                timeout=20.0,
-            ) as client:
-                await asyncio.sleep(random.uniform(1.0, 3.0))  # human-like delay
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    return resp.text
-                self.logger.warning(
-                    "amazon_http_error",
-                    status=resp.status_code,
-                    url=url,
-                )
+            response = await client.get(
+                url, params=params, headers=browser_headers(referer=referer)
+            )
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning("amazon_fetch_error", error=str(exc), url=url)
-        return None
+            self.logger.warning("amazon_fetch_error", url=url, error=str(exc)[:120])
+            return None
 
-    def _parse_search_results(self, html: str) -> list[dict[str, str]]:
-        """Extract product ASINs and titles from search-results HTML."""
-        try:
-            from bs4 import BeautifulSoup
-        except ImportError:
-            self.logger.warning("beautifulsoup4_not_installed")
-            return []
+        if response.status_code != 200:
+            self.logger.warning(
+                "amazon_http_error", url=url, status=response.status_code
+            )
+            return None
 
-        soup = BeautifulSoup(html, "html.parser")
+        marker = _is_blocked(response.text)
+        if marker:
+            self.logger.warning("amazon_blocked", url=url, marker=marker)
+            return None
+
+        return response.text
+
+    # ------------------------------------------------------------------ #
+    #  Parsing
+    # ------------------------------------------------------------------ #
+
+    def _parse_search_results(self, html: str, limit: int = 5) -> list[dict[str, str]]:
+        """Extract ASINs and titles from a search results page."""
+        soup = BeautifulSoup(html, "lxml")
         products: list[dict[str, str]] = []
+        seen: set[str] = set()
 
-        for item in soup.select('[data-asin]'):
-            asin = item.get("data-asin", "")
-            if not asin or len(asin) < 5:
+        for card in soup.select("div[data-asin]"):
+            asin = (card.get("data-asin") or "").strip()
+            if not asin or asin in seen:
                 continue
-            title_tag = item.select_one("h2 a span") or item.select_one("h2 span")
-            title = title_tag.get_text(strip=True) if title_tag else "Unknown Product"
+
+            title_el = (
+                card.select_one("h2 a span")
+                or card.select_one("a.a-link-normal span")
+                or card.select_one("h2")
+            )
+            title = title_el.get_text(" ", strip=True) if title_el else ""
+            if not title:
+                continue
+
+            seen.add(asin)
             products.append({"asin": asin, "title": title})
+
+            if len(products) >= limit:
+                break
 
         return products
 
     def _parse_reviews(
-        self, html: str, product_name: str
+        self,
+        html: str,
+        product_title: str,
+        marketplace: str,
     ) -> list[dict[str, Any]]:
-        """Extract reviews from a product-review page."""
-        try:
-            from bs4 import BeautifulSoup
-        except ImportError:
-            return []
+        """Extract reviews embedded in a product detail page.
 
-        soup = BeautifulSoup(html, "html.parser")
+        Amazon renders each review twice - once inline and once inside a
+        modal popover - so reviews are de-duplicated on their text.
+        """
+        soup = BeautifulSoup(html, "lxml")
         reviews: list[dict[str, Any]] = []
+        seen_bodies: set[str] = set()
 
-        for review_el in soup.select('[data-hook="review"]'):
-            # Title
-            title_tag = review_el.select_one('[data-hook="review-title"] span')
-            title = title_tag.get_text(strip=True) if title_tag else ""
-
-            # Body
-            body_tag = review_el.select_one('[data-hook="review-body"] span')
-            body = body_tag.get_text(strip=True) if body_tag else ""
-            if not body:
+        for block in soup.select("div[data-hook='review']"):
+            body_el = (
+                block.select_one("[data-hook='reviewRichContentContainer']")
+                or block.select_one("[data-hook='reviewText']")
+                or block.select_one("[data-hook='review-body']")
+            )
+            if body_el is None:
                 continue
 
-            # Rating
-            rating_tag = review_el.select_one('[data-hook="review-star-rating"] span')
-            rating = 0.0
-            if rating_tag:
-                match = re.search(r"([\d.]+)", rating_tag.get_text())
-                if match:
-                    rating = float(match.group(1))
+            content = body_el.get_text(" ", strip=True)
+            # Amazon injects this when a review is truncated in the DOM.
+            content = re.sub(
+                r"(Brief content visible.*?full content\.?|Read more|Read less)",
+                "", content, flags=re.IGNORECASE,
+            ).strip()
 
-            # Date
-            date_tag = review_el.select_one('[data-hook="review-date"]')
-            date_text = date_tag.get_text(strip=True) if date_tag else ""
+            if len(content) < 15:
+                continue
 
-            # Verified
-            verified_tag = review_el.select_one('[data-hook="avp-badge"]')
-            verified = verified_tag is not None
+            fingerprint = content[:120].lower()
+            if fingerprint in seen_bodies:
+                continue
+            seen_bodies.add(fingerprint)
 
-            reviews.append(
-                {
-                    "source": "amazon",
-                    "content": body,
-                    "metadata": {
-                        "rating": rating,
-                        "title": title,
-                        "date": date_text,
-                        "product_name": product_name,
-                        "verified": verified,
-                    },
-                }
+            title_el = (
+                block.select_one("[data-hook='reviewTitle']")
+                or block.select_one("[data-hook='review-title']")
             )
+            rating_el = block.select_one("[data-hook='review-star-rating']") \
+                or block.select_one("[data-hook='cmps-review-star-rating']")
+            date_el = block.select_one("[data-hook='review-date']")
+            author_el = block.select_one("span.a-profile-name")
+            helpful_el = block.select_one("[data-hook='helpful-vote-statement']")
+
+            review_title = title_el.get_text(" ", strip=True) if title_el else ""
+            # The title element also carries the rating text; strip it.
+            review_title = re.sub(r"^[\d.]+ out of 5 stars\s*", "", review_title).strip()
+
+            reviews.append({
+                "source": "amazon",
+                "content": content,
+                "metadata": {
+                    "is_mock": False,
+                    "rating": _parse_rating(
+                        rating_el.get_text(" ", strip=True) if rating_el else ""
+                    ),
+                    "title": review_title,
+                    "date": _parse_review_date(
+                        date_el.get_text(" ", strip=True) if date_el else ""
+                    ),
+                    "product_name": product_title,
+                    "verified": block.select_one("[data-hook='avp-badge']") is not None,
+                    "author": author_el.get_text(strip=True) if author_el else "Anonymous",
+                    "helpful_votes": parse_count(
+                        re.sub(r"[^\d,]", "", helpful_el.get_text())
+                        if helpful_el else ""
+                    ),
+                    "marketplace": marketplace,
+                    "collection_method": "detail_page_scrape",
+                },
+            })
 
         return reviews
 
     # ------------------------------------------------------------------ #
+    #  Live collection
+    # ------------------------------------------------------------------ #
+
+    async def _collect_from(
+        self,
+        marketplace: str,
+        query: str,
+        max_results: int,
+    ) -> list[dict[str, Any]]:
+        """Search one marketplace and gather reviews from its top products."""
+        base = f"https://www.{marketplace}"
+
+        async with new_client() as client:
+            # Warm the session: search requests from a cookie-less client are
+            # the first thing Amazon's bot detection rejects.
+            await self._get(client, f"{base}/")
+            await asyncio.sleep(self.request_delay)
+
+            search_html = await self._get(
+                client, f"{base}/s", params={"k": query}, referer=f"{base}/"
+            )
+            if not search_html:
+                return []
+
+            products = self._parse_search_results(search_html)
+            if not products:
+                self.logger.warning("amazon_no_products", marketplace=marketplace)
+                return []
+
+            self.logger.info(
+                "amazon_products_found",
+                marketplace=marketplace, count=len(products),
+            )
+
+            collected: list[dict[str, Any]] = []
+            for product in products:
+                if len(collected) >= max_results:
+                    break
+
+                await asyncio.sleep(self.request_delay)
+                detail_html = await self._get(
+                    client,
+                    f"{base}/dp/{product['asin']}",
+                    referer=f"{base}/s?k={quote_plus(query)}",
+                )
+                if not detail_html:
+                    continue
+
+                reviews = self._parse_reviews(
+                    detail_html, product["title"], marketplace
+                )
+                collected.extend(reviews)
+                self.logger.info(
+                    "amazon_reviews_parsed",
+                    asin=product["asin"], count=len(reviews),
+                )
+
+            return collected[:max_results]
+
+    # ------------------------------------------------------------------ #
     #  Main implementation
     # ------------------------------------------------------------------ #
+
+    def _mock(self, query: str, max_results: int, reason: str) -> list[dict[str, Any]]:
+        """Labelled synthetic data, or a hard failure if mocks are disabled."""
+        if not settings.ALLOW_MOCK_DATA:
+            raise RuntimeError(
+                f"Amazon scraping unavailable ({reason}) and ALLOW_MOCK_DATA is False"
+            )
+        self.logger.info("amazon_fallback_mock", reason=reason)
+        count = random.randint(30, max(30, min(50, max_results)))
+        return _generate_mock_reviews(query, count)
 
     async def _scrape_impl(
         self,
         query: str,
         max_results: int,
     ) -> list[dict[str, Any]]:
-        # Check DEBUG flag
-        try:
-            from app.config import settings
+        if settings.DEBUG:
+            return self._mock(query, max_results, "DEBUG=True")
 
-            if getattr(settings, "DEBUG", False):
-                self.logger.info("amazon_demo_mode", reason="DEBUG=True")
-                count = random.randint(30, min(50, max_results))
-                return _generate_mock_reviews(query, count)
-        except ImportError:
-            pass
-
-        # Attempt live scraping
-        all_reviews: list[dict[str, Any]] = []
-        encoded_query = quote_plus(query)
-        search_url = self.SEARCH_URL.format(query=encoded_query)
-
-        search_html = await self._fetch_page(search_url)
-        if not search_html:
-            self.logger.info("amazon_fallback_mock", reason="search_page_failed")
-            count = random.randint(30, min(50, max_results))
-            return _generate_mock_reviews(query, count)
-
-        products = self._parse_search_results(search_html)
-        if not products:
-            self.logger.info("amazon_fallback_mock", reason="no_products_found")
-            count = random.randint(30, min(50, max_results))
-            return _generate_mock_reviews(query, count)
-
-        self.logger.info("amazon_products_found", count=len(products))
-
-        for product in products[:5]:  # limit to first 5 products
-            review_url = (
-                f"https://www.amazon.com/product-reviews/{product['asin']}"
-                f"?sortBy=recent&pageNumber=1"
-            )
-            review_html = await self._fetch_page(review_url)
-            if review_html:
-                parsed = self._parse_reviews(review_html, product["title"])
-                all_reviews.extend(parsed)
-                self.logger.debug(
-                    "amazon_reviews_parsed",
-                    asin=product["asin"],
-                    count=len(parsed),
+        for marketplace in self.MARKETPLACES:
+            try:
+                results = await self._collect_from(marketplace, query, max_results)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "amazon_marketplace_error",
+                    marketplace=marketplace, error=str(exc)[:140],
                 )
-            if len(all_reviews) >= max_results:
-                break
+                continue
 
-        if not all_reviews:
-            self.logger.info("amazon_fallback_mock", reason="no_reviews_parsed")
-            count = random.randint(30, min(50, max_results))
-            return _generate_mock_reviews(query, count)
+            if results:
+                self.logger.info(
+                    "amazon_results_collected",
+                    marketplace=marketplace, count=len(results),
+                )
+                return results
 
-        return all_reviews[:max_results]
+            self.logger.info("amazon_marketplace_empty", marketplace=marketplace)
+
+        return self._mock(query, max_results, "all_marketplaces_blocked_or_empty")
