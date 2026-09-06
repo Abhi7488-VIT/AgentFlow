@@ -57,8 +57,20 @@ class Settings(BaseSettings):
     MLFLOW_ENABLED: bool = True
 
     # CORS - comma-separated origins allowed to call the API.
+    # The deployed frontend is included by default: defaulting to localhost
+    # only means a deploy with no CORS_ORIGINS set silently blocks every
+    # request from production, which is a failure that looks like the site
+    # is broken rather than misconfigured.
     # "*" is development-only; credentials are disabled when it is used.
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,"
+        "http://localhost:3000,"
+        "https://agentflowww.netlify.app"
+    )
+
+    # Netlify deploy previews get a generated subdomain per PR, so they are
+    # matched by pattern rather than listed.
+    CORS_ORIGIN_REGEX: str = r"https://.*--agentflowww\.netlify\.app"
 
     # Application
     APP_NAME: str = "AgentFlow AI"

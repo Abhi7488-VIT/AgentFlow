@@ -49,6 +49,7 @@ if not _allow_credentials:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
