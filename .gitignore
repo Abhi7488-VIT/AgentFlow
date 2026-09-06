@@ -63,5 +63,8 @@ htmlcov/
 # Personal interview-prep notes (ARCHITECTURE.md is the repo-facing doc)
 /PROJECT_GUIDE.md
 /PROJECT_DEEP_DIVE.md
-/PROJECT_GUIDE.pdf
+/PROJECT_GUIDE*.pdf
 /AgentFlow_Architecture.pdf
+
+# Local editor/tooling workspace state - per-machine, not project content
+/.claude/
