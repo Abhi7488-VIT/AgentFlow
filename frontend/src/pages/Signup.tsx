@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bot, UserPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { register as apiRegister } from '../api/client';
+import { register as apiRegister, login as apiLogin } from '../api/client';
 
 export const Signup = () => {
   const [fullName, setFullName] = useState('');
@@ -19,13 +19,18 @@ export const Signup = () => {
     setError('');
 
     try {
-      const data = await apiRegister({
+      await apiRegister({
         email,
         full_name: fullName,
         password
       });
+      // /register returns the new user, not a session, so sign in next.
+      const form = new URLSearchParams();
+      form.append('username', email);
+      form.append('password', password);
+      const data = await apiLogin(form);
       login(data.access_token, data.user);
-      navigate('/');
+      navigate('/app');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to create account');
     } finally {
@@ -48,7 +53,7 @@ export const Signup = () => {
               </div>
             </div>
             <h1 className="text-3xl font-bold text-clay-ink">Create Workspace</h1>
-            <p className="text-clay-ink-muted mt-2">Start using AgentFlow AI</p>
+            <p className="text-clay-ink-muted mt-2">Start running multi-agent research in minutes</p>
           </div>
 
           {error && (

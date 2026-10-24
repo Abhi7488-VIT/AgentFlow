@@ -14,7 +14,11 @@ interface AuthContextType {
   login: (token: string, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
+  isDemo: boolean;
 }
+
+// Matches DEMO_EMAIL on the backend; drives the demo banner.
+const DEMO_EMAIL = 'demo@agentflow.app';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -47,11 +51,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    navigate('/login');
+    navigate('/');
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token, isDemo: user?.email === DEMO_EMAIL }}>
       {children}
     </AuthContext.Provider>
   );

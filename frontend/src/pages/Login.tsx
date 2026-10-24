@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Bot, LogIn, Loader2 } from 'lucide-react';
+import { Bot, LogIn, Loader2, Sparkles } from 'lucide-react';
+import { useDemoLogin } from '../hooks/useDemoLogin';
 import { useAuth } from '../context/AuthContext';
 import { login as apiLogin } from '../api/client';
 
@@ -11,6 +12,7 @@ export const Login = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
+  const demo = useDemoLogin();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +26,7 @@ export const Login = () => {
 
       const data = await apiLogin(formData);
       login(data.access_token, data.user);
-      navigate('/');
+      navigate('/app');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to login');
     } finally {
@@ -50,9 +52,9 @@ export const Login = () => {
             <p className="text-clay-ink-muted mt-2">Log in to your AgentFlow workspace</p>
           </div>
 
-          {error && (
+          {(error || demo.error) && (
             <div className="bg-clay-coral/10 border-2 border-clay-coral/20 text-clay-coral-dark p-3 rounded-xl mb-6 text-sm text-center">
-              {error}
+              {error || demo.error}
             </div>
           )}
 
@@ -64,7 +66,7 @@ export const Login = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full clay-input"
-                placeholder="admin@agentflow.ai"
+                placeholder="you@company.com"
                 required
               />
             </div>
@@ -90,6 +92,19 @@ export const Login = () => {
               {loading ? 'Authenticating...' : 'Sign In'}
             </button>
           </form>
+
+          <div className="flex items-center gap-3 my-6 text-xs font-semibold uppercase tracking-wider text-clay-ink-muted">
+            <span className="h-0.5 flex-1 bg-clay-border rounded" />or<span className="h-0.5 flex-1 bg-clay-border rounded" />
+          </div>
+          <button
+            type="button"
+            onClick={demo.start}
+            disabled={demo.loading}
+            className="w-full clay-button-ghost py-3 flex items-center justify-center gap-2"
+          >
+            {demo.loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5 text-clay-purple" />}
+            {demo.loading ? 'Opening demo...' : 'Try the live demo, no signup'}
+          </button>
 
           <p className="text-center text-clay-ink-muted mt-6 text-sm">
             Don't have an account?{' '}

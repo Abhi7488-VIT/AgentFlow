@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 class RAGQuery(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=500)
     workflow_id: Optional[str] = None
 
 
@@ -47,6 +47,10 @@ async def query_rag(
     """Ask a question answered only from that workflow's scraped corpus."""
     if query.workflow_id:
         await _owned_workflow(db, query.workflow_id, current_user)
+    elif getattr(current_user, "role", None) != "admin":
+        # Without a workflow the question would hit the shared global
+        # collection, which is not scoped to any one user's data.
+        raise HTTPException(status_code=400, detail="workflow_id is required")
     return await rag_service.query_rag(query.question, query.workflow_id)
 
 

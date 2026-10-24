@@ -1,0 +1,53 @@
+# Render Blueprint for the AgentFlow API.
+# Render dashboard -> New -> Blueprint -> select this repo.
+services:
+  - type: web
+    name: agentflow-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    # Same region as the Neon database, so queries stay fast.
+    region: singapore
+    healthCheckPath: /api/monitoring/health
+    envVars:
+      - key: APP_NAME
+        value: AgentFlow AI
+      - key: DEBUG
+        value: "false"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "480"
+      # Neon connection string, pasted as-is (postgresql://...?sslmode=require)
+      - key: DATABASE_URL
+        sync: false
+      # Deployed frontend, e.g. https://agentflow-yourname.vercel.app
+      - key: CORS_ORIGINS
+        sync: false
+      # Your email: that account becomes admin when you sign up
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      # Optional: more reliable YouTube than the keyless fallback
+      - key: YOUTUBE_API_KEY
+        sync: false
+      # Optional: live Reddit instead of synthetic data
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: DEMO_ENABLED
+        value: "true"
+      - key: DEMO_MAX_WORKFLOWS_PER_HOUR
+        value: "10"
+      # Free instances have 512 MB. MLflow's local file store is wiped on every
+      # deploy anyway, so skip it; and cap glibc malloc arenas, which otherwise
+      # grow with the scraper threads and fragment memory.
+      - key: MLFLOW_ENABLED
+        value: "false"
+      - key: MALLOC_ARENA_MAX
+        value: "2"

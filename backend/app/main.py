@@ -6,7 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 
-from app.database import init_db
+from app.database import async_session_factory, init_db
+from app.services.workflow_service import fail_interrupted_workflows
 from app.core.exceptions import AppError, app_error_handler
 from app.core.middleware import RequestLoggingMiddleware, PrometheusMiddleware
 from app.config import settings
@@ -29,6 +30,10 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting up application...")
     await init_db()
+    async with async_session_factory() as db:
+        interrupted = await fail_interrupted_workflows(db)
+    if interrupted:
+        logger.warning(f"Marked {interrupted} interrupted workflow(s) as failed")
     start_scheduler()
     yield
     logger.info("Shutting down application...")

@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Workflow, FileText, Settings, Bot, LogOut, X, Users } from 'lucide-react';
+import { Link, NavLink } from 'react-router-dom';
+import { LayoutDashboard, Workflow, FileText, Settings, Bot, LogOut, X, Users, MessageSquareText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -10,11 +10,12 @@ interface SidebarProps {
 export const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
   const { user, logout } = useAuth();
   const links = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/workflows', icon: Workflow, label: 'Workflows' },
-    { to: '/reports', icon: FileText, label: 'Reports' },
-    { to: '/users', icon: Users, label: 'Users' },
-    { to: '/settings', icon: Settings, label: 'Settings' },
+    { to: '/app', icon: LayoutDashboard, label: 'Dashboard', end: true },
+    { to: '/app/workflows', icon: Workflow, label: 'Workflows' },
+    { to: '/app/reports', icon: FileText, label: 'Reports' },
+    { to: '/app/ask', icon: MessageSquareText, label: 'Ask AI' },
+    { to: '/app/users', icon: Users, label: 'Users' },
+    { to: '/app/settings', icon: Settings, label: 'Settings' },
   ];
 
   return (
@@ -30,10 +31,10 @@ export const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
       {/* Sidebar drawer */}
       <aside className={`w-64 h-screen bg-white border-r-2 border-clay-border shadow-[6px_0_20px_rgba(0,0,0,0.06)] flex flex-col fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
         <div className="p-6 flex items-center justify-between border-b-2 border-clay-border">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <Bot className="text-clay-blue w-8 h-8" />
             <span className="text-xl font-bold gradient-text">AgentFlow</span>
-          </div>
+          </Link>
           <button onClick={() => setIsOpen(false)} className="md:hidden text-clay-ink-muted hover:text-clay-ink">
             <X className="w-6 h-6" />
           </button>
@@ -44,6 +45,7 @@ export const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
             <NavLink
               key={link.to}
               to={link.to}
+              end={link.end}
               onClick={() => setIsOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${

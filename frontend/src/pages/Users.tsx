@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { Users as UsersIcon, Shield, Mail, Calendar } from 'lucide-react';
 import { fetchUsers } from '../api/client';
 
 export const Users = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
 
   const loadUsers = async () => {
     try {
       const data = await fetchUsers();
       setUsers(data || []);
     } catch (error) {
-      console.error("Failed to fetch users", error);
+      if (axios.isAxiosError(error) && error.response?.status === 403) setForbidden(true);
+      else console.error("Failed to fetch users", error);
     } finally {
       setLoading(false);
     }
@@ -48,6 +51,8 @@ export const Users = () => {
             <tbody className="divide-y divide-clay-border">
               {loading ? (
                 <tr><td colSpan={4} className="p-8 text-center text-clay-ink-muted">Loading users...</td></tr>
+              ) : forbidden ? (
+                <tr><td colSpan={4} className="p-8 text-center text-clay-ink-muted">Only admins can view registered accounts.</td></tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan={4} className="p-8 text-center text-clay-ink-muted">No users found.</td></tr>
               ) : (

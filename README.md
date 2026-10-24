@@ -14,9 +14,11 @@
 
 *Production-grade AI platform that orchestrates intelligent agents to gather, analyze, and deliver real-time market intelligence from multiple data sources.*
 
+**[▶ Live demo](https://agent-flow-ten-topaz.vercel.app)** — click *Try the live demo*, no signup needed
+
 ---
 
-[**Features**](#-features) · [**Quick Start**](#-quick-start) · [**Architecture**](#-architecture) · [**API Docs**](#-api-documentation) · [**Contributing**](#-contributing)
+[**Features**](#features) · [**Deployment**](#deployment-render--vercel--neon) · [**Quick Start**](#quick-start) · [**Architecture**](#-architecture) · [**API Docs**](#-api-documentation) · [**Contributing**](#-contributing)
 
 </div>
 
@@ -38,11 +40,13 @@ Whether you're tracking competitor movements, analyzing market sentiment, or dis
 - 📊 **Multi-Source Collection** — Concurrent collection from Amazon (detail-page review scraping), YouTube (Data API v3, falling back to keyless innertube), and Reddit (OAuth2 API)
 - 🧠 **RAG-Powered Q&A** — Per-workflow ChromaDB collections with Gemini embeddings, similarity-filtered retrieval, and cited answers
 - 🔬 **Real NLP Pipeline** — VADER sentiment (handles negation and intensifiers), TF-IDF keyword extraction with per-keyword sentiment, NMF topic modelling, and regression-based trend detection
-- 🎨 **Interactive Dashboard** — React + TypeScript UI with real-time data visualization and workflow management
+- 💬 **Ask AI** — Chat with any completed workflow's data; answers cite the exact comments they came from, and the index rebuilds itself if the host's disk was reset
+- 🎨 **Interactive Dashboard** — Landing page, claymorphism UI, real-time charts and workflow management
+- 🚀 **One-Click Demo** — Visitors explore a shared demo workspace without signing up, with an hourly cap that protects the Gemini quota
 - 🔄 **Workflow Management** — Create, monitor, and control complex multi-agent analysis pipelines
 - 📈 **Observability** — Prometheus request metrics at `/metrics`, Grafana dashboards, structured JSON logging, and MLflow tracking of every workflow run (live-data ratio, per-agent latency, sentiment, revisions)
 - 🛡️ **Honest Data Provenance** — Every collected item is flagged `is_mock`, so synthetic demo data can never be mistaken for real data; set `ALLOW_MOCK_DATA=false` to make a source failure raise instead
-- 🔐 **Enterprise Security** — JWT authentication, rate limiting, CORS, and security headers
+- 🔐 **Security** — JWT authentication, role-based access (admin-only user management), CORS allow-list, and query sanitisation against prompt injection
 - 🐳 **One-Command Deployment** — Full Docker Compose stack with health checks and auto-restart
 
 ---
@@ -227,6 +231,36 @@ make logs     # Follow Docker logs
 
 ---
 
+## Deployment (Render + Vercel + Neon)
+
+All three have free tiers. Deploy in this order, since each step needs a URL from the one before.
+
+**1. Database — [Neon](https://neon.tech).** Create a project and copy the connection string (`postgresql://...?sslmode=require`). Paste it as-is; the backend converts it for asyncpg.
+
+**2. Backend — [Render](https://render.com).** *New → Blueprint* → select this repo (uses [`render.yaml`](render.yaml)). Fill in:
+
+| Variable | Value |
+|:---|:---|
+| `DATABASE_URL` | The Neon connection string |
+| `CORS_ORIGINS` | Your Vercel URL, e.g. `https://agentflow-yourname.vercel.app` |
+| `ADMIN_EMAIL` | Your email — that account becomes admin when you sign up |
+| `GEMINI_API_KEY` | From [Google AI Studio](https://aistudio.google.com/apikey) — powers insights, reports and Ask AI |
+| `YOUTUBE_API_KEY` | Optional — YouTube Data API v3 key; more reliable than the keyless fallback |
+| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Optional — a "script" app from [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps); without it Reddit uses synthetic data |
+
+Tables are created on first boot. Note the service URL, e.g. `https://agentflow-api.onrender.com`.
+
+**3. Frontend — [Vercel](https://vercel.com).** Import the repo, set **Root Directory** to `frontend`, and add
+`VITE_API_URL=https://agentflow-api.onrender.com/api`. Deploy, then make sure Render's `CORS_ORIGINS` matches the Vercel URL.
+
+**4. Keep it awake.** Free Render instances sleep after ~15 minutes, so the first visit takes ~1 minute. In GitHub → *Settings → Secrets and variables → Actions → Variables*, add `BACKEND_URL` (the Render URL). The [keep-warm workflow](.github/workflows/keep-warm.yml) then pings it every 10 minutes.
+
+> **Already on Netlify?** The existing [`netlify.toml`](netlify.toml) still works (base `frontend`, SPA fallback for the `/app/*` routes); set `VITE_API_URL` there instead. `https://agentflowww.netlify.app` and its deploy previews stay allowed by default, and setting `CORS_ORIGINS` replaces that default, so list every frontend you serve.
+
+> Free Render disks are wiped on every deploy. Workflows and reports live in Postgres and survive; the vector index is rebuilt automatically the first time you open Ask AI for a workflow.
+
+---
+
 ## API Documentation
 
 AgentFlow AI provides interactive API documentation:
@@ -240,6 +274,8 @@ AgentFlow AI provides interactive API documentation:
 |:---|:---|:---|
 | `POST` | `/api/auth/register` | Create an account |
 | `POST` | `/api/auth/login` | Authenticate and receive JWT token |
+| `POST` | `/api/auth/demo` | Sign in to the shared demo workspace |
+| `GET` | `/api/auth/users` | List accounts (admin only) |
 | `GET` | `/api/workflows/` | List all workflows |
 | `POST` | `/api/workflows/` | Create a new analysis workflow |
 | `GET` | `/api/workflows/{id}` | Get workflow status and results |
@@ -336,8 +372,8 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 <div align="center">
 
-**Built with ❤️ by the AgentFlow AI Team**
+**Built by [Aditya Rai](https://github.com/AdityaRai123)**
 
-[⬆ Back to Top](#-agentflow-ai)
+[⬆ Back to Top](#agentflow-ai)
 
 </div>

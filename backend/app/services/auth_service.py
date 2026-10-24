@@ -4,16 +4,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.user import User
 from app.schemas.user import UserCreate
+from app.config import settings
 from app.core.security import hash_password, verify_password
+
+
+async def role_for_new_user(db: AsyncSession, email: str) -> str:
+    """Pick the role for a new signup.
+
+    With ADMIN_EMAIL set, only that address becomes admin. Otherwise the very
+    first account bootstraps as admin. Everyone else is a viewer: granting
+    admin to every registration would make require_role() meaningless.
+    """
+    if settings.ADMIN_EMAIL:
+        return "admin" if email.lower() == settings.ADMIN_EMAIL.lower() else "viewer"
+    existing = await db.execute(select(func.count(User.id)))
+    return "admin" if (existing.scalar() or 0) == 0 else "viewer"
+
 
 async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
     hashed = hash_password(user_data.password)
-
-    # Only the very first account bootstraps as admin; everyone who signs up
-    # afterwards is a regular user. Granting admin to every registration
-    # would make the role checks in require_role() meaningless.
-    existing = await db.execute(select(func.count(User.id)))
-    role = "admin" if (existing.scalar() or 0) == 0 else "user"
+    role = await role_for_new_user(db, user_data.email)
 
     user = User(
         email=user_data.email,

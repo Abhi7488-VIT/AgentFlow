@@ -1,10 +1,15 @@
 """Workflow API routes - create, list, get, delete analysis workflows."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from app.config import settings
 from app.database import get_db
+from app.models.workflow import Workflow
 from app.core.security import get_current_user
 from app.core.sanitizer import sanitize_query
 from app.models.user import User
@@ -13,6 +18,25 @@ from app.services import workflow_service
 from app.workers.tasks import execute_workflow_task
 
 router = APIRouter()
+
+
+async def _enforce_demo_quota(db: AsyncSession, user_id) -> None:
+    """Cap how many workflows the shared demo account can start per hour."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    if db.bind.dialect.name == "sqlite":
+        # SQLite stores naive UTC timestamps; compare like with like.
+        cutoff = cutoff.replace(tzinfo=None)
+    recent = await db.scalar(
+        select(func.count(Workflow.id)).where(
+            Workflow.user_id == user_id, Workflow.created_at >= cutoff
+        )
+    )
+    if recent >= settings.DEMO_MAX_WORKFLOWS_PER_HOUR:
+        raise HTTPException(
+            status_code=429,
+            detail="The demo account has hit its hourly limit. "
+                   "Create a free account to keep going.",
+        )
 
 @router.post("/", response_model=WorkflowResponse)
 async def create_workflow(
@@ -29,7 +53,10 @@ async def create_workflow(
     
     # Override the raw query with the sanitized version
     workflow_in.query = clean_query
-    
+
+    if current_user.email.lower() == settings.DEMO_EMAIL.lower():
+        await _enforce_demo_quota(db, current_user.id)
+
     workflow = await workflow_service.create_workflow(db, current_user.id, workflow_in)
     
     # Launch background task with sanitized query

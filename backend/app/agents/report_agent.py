@@ -27,7 +27,7 @@ async def report_node(state: AgentState) -> AgentState:
         try:
             genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(
-                'gemini-2.5-flash',
+                settings.GEMINI_MODEL,
                 generation_config={"response_mime_type": "application/json"}
             )
             
@@ -103,7 +103,7 @@ Return JSON matching this exact schema:
     }}
 }}"""
             
-            response = await model.generate_content_async(prompt)
+            response = await model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
             data = extract_json(response.text)
             
             # Validate that the report is actually about the query (not generic)
@@ -132,12 +132,12 @@ Return JSON matching this exact schema:
             # Use Gemini to generate even the fallback, but with a simpler prompt
             try:
                 simple_model = genai.GenerativeModel(
-                    'gemini-2.5-flash',
+                    settings.GEMINI_MODEL,
                     generation_config={"response_mime_type": "application/json"}
                 )
                 simple_prompt = f"""Write a market analysis report about "{query}" using your own knowledge. Name REAL competitors, REAL market data, REAL prices. Do NOT use placeholders like "Competitor A". Return JSON with keys: title (string), tagline (string), executive_summary (string, 2 paragraphs with real facts about {query}), recommendations (list of 5 specific strings), sections (object with "Product Overview", "Market & Competitor Analysis", "SWOT Analysis", "Recommendations", "Conclusion" — each a detailed string paragraph with real information about {query}), advanced_metrics (object with "Innovation Score", "Market Readiness Score", "Consumer Satisfaction" as strings with scores)."""
                 
-                simple_response = await simple_model.generate_content_async(simple_prompt)
+                simple_response = await simple_model.generate_content_async(simple_prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
                 data = extract_json(simple_response.text)
                 state["report"] = data
                 logger.info("Simple fallback Gemini report generated")

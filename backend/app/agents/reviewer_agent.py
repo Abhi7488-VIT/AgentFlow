@@ -37,7 +37,7 @@ async def reviewer_node(state: AgentState) -> AgentState:
     if settings.GEMINI_API_KEY:
         try:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel(settings.GEMINI_MODEL)
             
             prompt = f"""
             Review the following market research report for "{query}".
@@ -55,7 +55,7 @@ async def reviewer_node(state: AgentState) -> AgentState:
             }}
             """
             
-            response = await model.generate_content_async(prompt)
+            response = await model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
             text = response.text
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()

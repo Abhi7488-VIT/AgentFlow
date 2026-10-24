@@ -32,8 +32,8 @@ class TestRoleAssignment:
             third = await create_user(db, _new_user("third@example.com"))
 
         assert first.role == "admin"
-        assert second.role == "user"
-        assert third.role == "user"
+        assert second.role == "viewer"
+        assert third.role == "viewer"
 
     async def test_privilege_cannot_be_gained_by_registering(self):
         """The actual vulnerability: signing up must not grant admin."""
@@ -46,8 +46,8 @@ class TestRoleAssignment:
             )
             persisted = result.scalar_one()
 
-        assert attacker.role == "user"
-        assert persisted.role == "user", "role must not be admin in the database either"
+        assert attacker.role == "viewer"
+        assert persisted.role == "viewer", "role must not be admin in the database either"
 
 
 @pytest.mark.asyncio

@@ -167,7 +167,7 @@ class TestGenerationDegradation:
 
     async def test_rate_limited_generation_returns_the_context(self, monkeypatch):
         class RateLimited:
-            async def generate_content_async(self, prompt):
+            async def generate_content_async(self, prompt, request_options=None):
                 raise Exception("429 ResourceExhausted: quota exceeded")
 
         instance = await self._retriever(RateLimited(), monkeypatch)
@@ -181,7 +181,7 @@ class TestGenerationDegradation:
             def __init__(self):
                 self.calls = 0
 
-            async def generate_content_async(self, prompt):
+            async def generate_content_async(self, prompt, request_options=None):
                 self.calls += 1
                 if self.calls == 1:
                     raise Exception("429 quota exceeded")
@@ -202,7 +202,7 @@ class TestGenerationDegradation:
             def __init__(self):
                 self.calls = 0
 
-            async def generate_content_async(self, prompt):
+            async def generate_content_async(self, prompt, request_options=None):
                 self.calls += 1
                 raise ValueError("malformed request")
 
@@ -212,6 +212,7 @@ class TestGenerationDegradation:
 
         assert model.calls == 1, "only rate limits are worth retrying"
         assert "Source [1]: ctx" in answer
+        assert "rate limited" not in answer.lower(), "a timeout must not be reported as a rate limit"
 
     @pytest.mark.parametrize("error,expected", [
         (Exception("429 Too Many Requests"), True),

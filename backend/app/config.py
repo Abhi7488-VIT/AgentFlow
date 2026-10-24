@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        # .env is shared with docker-compose (GRAFANA_*, PROMETHEUS_PORT...);
+        # ignore keys this class does not model instead of refusing to start.
+        extra="ignore",
         case_sensitive=False,
     )
 
@@ -21,6 +24,12 @@ class Settings(BaseSettings):
 
     # AI / LLM
     GEMINI_API_KEY: str = ""
+    # Model used by the insight, report, reviewer and RAG agents. Override via env
+    # when Google retires a model, instead of editing five call sites.
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    # Per-request timeout so a hung Gemini call fails over to the fallback path
+    # instead of leaving a workflow stuck in "running" forever.
+    GEMINI_TIMEOUT_SECONDS: int = 90
 
     # JWT Authentication
     JWT_SECRET_KEY: str = "super-secret-key-change-in-production"
@@ -62,15 +71,31 @@ class Settings(BaseSettings):
     # request from production, which is a failure that looks like the site
     # is broken rather than misconfigured.
     # "*" is development-only; credentials are disabled when it is used.
+    # New deploys set this to their frontend URL (see render.yaml); the
+    # existing Netlify frontend stays allowed so current production keeps
+    # working when CORS_ORIGINS is unset.
     CORS_ORIGINS: str = (
         "http://localhost:5173,"
         "http://localhost:3000,"
         "https://agentflowww.netlify.app"
     )
 
-    # Netlify deploy previews get a generated subdomain per PR, so they are
-    # matched by pattern rather than listed.
+    # Per-branch preview deploys get a generated subdomain, so they are
+    # matched by pattern rather than listed. Defaults to Netlify deploy
+    # previews; a Vercel deploy can use e.g. r"https://agentflow-.*\.vercel\.app"
     CORS_ORIGIN_REGEX: str = r"https://.*--agentflowww\.netlify\.app"
+
+    # Accounts
+    # The user registering with this email becomes admin. When unset, the
+    # first account ever registered is made admin instead.
+    ADMIN_EMAIL: str = ""
+
+    # Public demo login ("Try the live demo"): signs visitors into one shared,
+    # non-admin account. The hourly cap stops a stranger from burning through
+    # the Gemini quota.
+    DEMO_ENABLED: bool = True
+    DEMO_EMAIL: str = "demo@agentflow.app"
+    DEMO_MAX_WORKFLOWS_PER_HOUR: int = 10
 
     # Application
     APP_NAME: str = "AgentFlow AI"

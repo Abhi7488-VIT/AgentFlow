@@ -19,10 +19,9 @@ mention it, which is what turns a word cloud into something actionable:
 
 import re
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from app.core.logging import get_logger
 from app.nlp.sentiment import SentimentAnalyzer
+from app.nlp.vectorize import TfidfVectorizer
 
 logger = get_logger(__name__)
 
@@ -82,7 +81,7 @@ class KeywordExtractor:
         terms = vectorizer.get_feature_names_out()
 
         # Corpus-level weight for each term: summed TF-IDF across documents.
-        weights = matrix.sum(axis=0).A1
+        weights = matrix.sum(axis=0)
         ranked = sorted(zip(terms, weights), key=lambda x: x[1], reverse=True)
 
         # Rank words and phrases separately so phrases are not crowded out.

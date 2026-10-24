@@ -14,11 +14,9 @@ Each topic reports how many documents it dominates, so a topic covering
 three comments is not presented as equal to one covering three hundred.
 """
 
-from sklearn.decomposition import NMF
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from app.core.logging import get_logger
 from app.nlp.sentiment import SentimentAnalyzer
+from app.nlp.vectorize import NMF, TfidfVectorizer
 
 logger = get_logger(__name__)
 
@@ -85,9 +83,7 @@ class TopicExtractor:
 
         model = NMF(
             n_components=n_components,
-            init="nndsvd",        # deterministic seeding
-            random_state=42,      # reproducible runs
-            max_iter=400,
+            max_iter=400,         # nndsvd init: deterministic, reproducible
         )
         doc_topics = model.fit_transform(matrix)
 

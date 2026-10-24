@@ -6,6 +6,12 @@ for isolated integration tests.
 """
 
 from collections.abc import AsyncGenerator
+import os
+
+# Production reads the frontend origin from the environment (render.yaml), so
+# tests supply one the same way. Must be set before app.config is imported.
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,https://agentflow.example.app")
+os.environ.setdefault("CORS_ORIGIN_REGEX", r"https://agentflow-[a-z0-9-]+\.vercel\.app")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient

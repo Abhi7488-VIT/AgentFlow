@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, Download, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FileText, Download, Trash2, MessageSquareText } from 'lucide-react';
 import { fetchReports, deleteReport } from '../api/client';
 
 export const Reports = () => {
@@ -49,6 +50,13 @@ export const Reports = () => {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <Link
+                    to={`/app/ask?workflow=${report.workflow_id}`}
+                    className="p-2 rounded-lg bg-clay-purple/15 hover:bg-clay-purple/25 text-clay-purple-dark transition-colors"
+                    title="Ask AI about this research"
+                  >
+                    <MessageSquareText className="w-4 h-4" />
+                  </Link>
                   <button 
                     onClick={async () => {
                       try {

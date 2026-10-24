@@ -10,12 +10,12 @@ import pytest
 
 from app.config import settings
 
-PRODUCTION_ORIGIN = "https://agentflowww.netlify.app"
+# Supplied via CORS_ORIGINS in conftest, as render.yaml does in production.
+PRODUCTION_ORIGIN = "https://agentflow.example.app"
 
 
 class TestConfiguredOrigins:
-    def test_production_frontend_is_allowed_by_default(self):
-        """A deploy with no CORS_ORIGINS set must still serve the real frontend."""
+    def test_production_frontend_from_env_is_allowed(self):
         assert PRODUCTION_ORIGIN in settings.cors_origins
 
     def test_local_dev_origins_are_allowed(self):
@@ -33,8 +33,26 @@ class TestConfiguredOrigins:
         import re
 
         pattern = re.compile(settings.CORS_ORIGIN_REGEX)
-        assert pattern.fullmatch("https://deploy-preview-1--agentflowww.netlify.app")
+        assert pattern.fullmatch("https://agentflow-git-feature-x.vercel.app")
         assert not pattern.fullmatch("https://evil.com")
+
+
+class TestDefaults:
+    """With no CORS env vars, the existing Netlify frontend must keep working."""
+
+    def test_existing_netlify_frontend_is_allowed_by_default(self, monkeypatch):
+        import re
+
+        from app.config import Settings
+
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+        monkeypatch.delenv("CORS_ORIGIN_REGEX", raising=False)
+        defaults = Settings(_env_file=None)
+
+        assert "https://agentflowww.netlify.app" in defaults.cors_origins
+        assert re.fullmatch(
+            defaults.CORS_ORIGIN_REGEX, "https://deploy-preview-1--agentflowww.netlify.app"
+        )
 
 
 @pytest.mark.asyncio
