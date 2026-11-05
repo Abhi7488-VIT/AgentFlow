@@ -13,6 +13,7 @@ from app.models.embedding_metadata import EmbeddingMetadata
 from app.models.analytics import Analytics
 from app.models.agent_log import AgentLog
 from app.models.scheduled_task import ScheduledTask
+from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "Analytics",
     "AgentLog",
     "ScheduledTask",
+    "RefreshToken",
 ]

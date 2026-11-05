@@ -1,8 +1,15 @@
-"""Auth API routes - registration, login, and current-user lookup."""
+"""Auth API routes - registration, login, token refresh and logout.
 
+Sessions are a short-lived access token (JWT, returned in the body) plus a
+rotating refresh token in an HttpOnly cookie scoped to /api/auth. The
+frontend silently trades the cookie for a new access token on a 401.
+"""
+
+import re
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from fastapi.security import OAuth2PasswordRequestForm
@@ -20,9 +27,83 @@ from app.core.security import (
 )
 from app.schemas.user import UserCreate, TokenResponse, UserResponse
 from app.services.auth_service import create_user
+from app.services import refresh_service
 from app.core import perf
 
 router = APIRouter()
+
+
+# --------------------------------------------------------------------- #
+#  Refresh cookie
+# --------------------------------------------------------------------- #
+
+def _refresh_cookie_header(value: str, max_age: int) -> str:
+    """Build the Set-Cookie header by hand.
+
+    Starlette's set_cookie goes through http.cookies, which only supports
+    the Partitioned attribute on Python 3.14+ (production runs 3.11).
+    The value is URL-safe base64 from secrets.token_urlsafe, so it needs no
+    quoting.
+    """
+    parts = [
+        f"{settings.REFRESH_COOKIE_NAME}={value}",
+        f"Max-Age={max_age}",
+        f"Path={settings.REFRESH_COOKIE_PATH}",
+        "HttpOnly",           # unreadable by page JavaScript, so XSS cannot steal it
+        f"SameSite={settings.REFRESH_COOKIE_SAMESITE.capitalize()}",
+    ]
+    if max_age == 0:
+        parts.append("Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+    if settings.REFRESH_COOKIE_SECURE:
+        parts.append("Secure")
+    if settings.REFRESH_COOKIE_PARTITIONED:
+        parts.append("Partitioned")
+    return "; ".join(parts)
+
+
+def set_refresh_cookie(response: Response, raw_token: str) -> None:
+    max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+    response.headers.append("set-cookie", _refresh_cookie_header(raw_token, max_age))
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    # Same Path / SameSite / Partitioned as when set, or browsers keep it.
+    response.headers.append("set-cookie", _refresh_cookie_header("", 0))
+
+
+def origin_allowed(origin: str) -> bool:
+    """Same allow-list as CORS (CORS_ORIGINS plus CORS_ORIGIN_REGEX)."""
+    origins = settings.cors_origins
+    if "*" in origins or origin in origins:
+        return True
+    regex = settings.CORS_ORIGIN_REGEX
+    return bool(regex and re.fullmatch(regex, origin))
+
+
+def require_allowed_origin(request: Request) -> None:
+    """CSRF guard for the cookie-authenticated endpoints.
+
+    The refresh cookie is SameSite=None (the frontend is a different site),
+    so a page on any site could make the browser POST it here. CORS stops
+    that page from *reading* the new access token, but the request would
+    still rotate the token. Browsers always send Origin on cross-site
+    POSTs, so refuse any Origin not on the allow-list. Requests without
+    Origin (curl, server-to-server) carry no browser cookie jar to abuse.
+    """
+    origin = request.headers.get("origin")
+    if origin and not origin_allowed(origin):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+
+
+async def _session_response(db: AsyncSession, response: Response, user: User) -> dict:
+    """Body for a fresh login: access token, plus a refresh cookie."""
+    raw, _ = await refresh_service.issue(db, user.id)
+    set_refresh_cookie(response, raw)
+    return {
+        "access_token": create_access_token(data={"sub": str(user.id)}),
+        "token_type": "bearer",
+        "user": user,
+    }
 
 @router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
@@ -52,8 +133,9 @@ async def get_all_users(db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     # Try to authenticate user
     with perf.span("auth.db_lookup"):
@@ -91,17 +173,11 @@ async def login(
             user.hashed_password = await hash_password_async(form_data.password)
 
     with perf.span("auth.token_create"):
-        access_token = create_access_token(data={"sub": str(user.id)})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user
-    }
+        return await _session_response(db, response, user)
 
 
 @router.post("/demo", response_model=TokenResponse)
-async def demo_login(db: AsyncSession = Depends(get_db)):
+async def demo_login(response: Response, db: AsyncSession = Depends(get_db)):
     """Sign in to the shared demo account, creating it on first use.
 
     Lets visitors try the product without registering. The account is a
@@ -130,8 +206,40 @@ async def demo_login(db: AsyncSession = Depends(get_db)):
         await db.commit()
         await db.refresh(user)
 
+    return await _session_response(db, response, user)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    dependencies=[Depends(require_allowed_origin)],
+)
+async def refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Trade the refresh cookie for a new access token, rotating the cookie."""
+    result = await refresh_service.rotate(db, request.cookies.get(settings.REFRESH_COOKIE_NAME))
+    if result.user is None:
+        if result.error == "reused":
+            # Revoking the family must survive the error response.
+            await db.commit()
+        failed = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Session expired. Please log in again."},
+        )
+        clear_refresh_cookie(failed)
+        return failed
+
+    if result.new_raw_token:
+        set_refresh_cookie(response, result.new_raw_token)
     return {
-        "access_token": create_access_token(data={"sub": str(user.id)}),
+        "access_token": create_access_token(data={"sub": str(result.user.id)}),
         "token_type": "bearer",
-        "user": user,
+        "user": result.user,
     }
+
+
+@router.post("/logout", dependencies=[Depends(require_allowed_origin)])
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Revoke this login's refresh tokens and clear the cookie. Idempotent."""
+    await refresh_service.revoke(db, request.cookies.get(settings.REFRESH_COOKIE_NAME))
+    clear_refresh_cookie(response)
+    return {"success": True}

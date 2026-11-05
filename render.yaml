@@ -19,8 +19,10 @@ services:
         value: "false"
       - key: JWT_SECRET_KEY
         generateValue: true
+      # Short-lived: the frontend refreshes silently from the HttpOnly
+      # refresh cookie (REFRESH_TOKEN_EXPIRE_DAYS, default 14).
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "480"
+        value: "15"
       # Neon connection string, pasted as-is (postgresql://...?sslmode=require)
       - key: DATABASE_URL
         sync: false

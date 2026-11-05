@@ -35,7 +35,25 @@ class Settings(BaseSettings):
     # JWT Authentication
     JWT_SECRET_KEY: str = "super-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Short-lived: the frontend refreshes it silently from the refresh cookie.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+
+    # Refresh tokens: opaque, rotated on every use, stored hashed server side
+    # (app/models/refresh_token.py) and sent only as an HttpOnly cookie.
+    # The frontend (Netlify) and API (Render) are different sites, so the
+    # cookie must be SameSite=None + Secure to be sent at all. Partitioned
+    # (CHIPS) keys it to the frontend's site; Safari blocks third-party
+    # cookies by default, so Safari users fall back to logging in again.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    REFRESH_COOKIE_NAME: str = "agentflow_refresh"
+    REFRESH_COOKIE_PATH: str = "/api/auth"     # never sent to other endpoints
+    REFRESH_COOKIE_SECURE: bool = True         # browsers treat localhost as secure
+    REFRESH_COOKIE_SAMESITE: str = "none"      # "lax" when frontend and API share a site
+    REFRESH_COOKIE_PARTITIONED: bool = True
+    # Two tabs refreshing at the same moment both present the same token; the
+    # loser would look like token theft. Within this window a just-rotated
+    # token still gets an access token (but no new refresh token).
+    REFRESH_REUSE_GRACE_SECONDS: int = 30
     # bcrypt cost factor for new hashes. Each step doubles the work: on
     # Render's free CPU 12 took ~1.7 s per login, 11 is ~0.85 s. 11 stays
     # above OWASP's minimum of 10. Existing hashes are upgraded or downgraded

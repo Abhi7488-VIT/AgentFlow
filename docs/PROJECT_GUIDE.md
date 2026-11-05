@@ -360,8 +360,9 @@ For each: *what it does here* → *why it beat the obvious alternative* → *wha
   (`clay-card`, `clay-button`, `clay-input` in `index.css`). Trade-off: JSX gets visually noisy.
 - **React Router v6** — client-side routing. This is why `netlify.toml` needs a catch-all rewrite (§3.5).
 - **Axios over `fetch`** — for **interceptors**, which is the entire reason. One request interceptor attaches
-  the JWT to every call; one response interceptor catches any `401`, clears localStorage and redirects to
-  `/login`. With `fetch` that's per-call boilerplate everywhere. See `frontend/src/api/client.ts`.
+  the JWT to every call; one response interceptor catches a `401`, silently refreshes the access token from
+  the refresh cookie (one refresh in flight, concurrent requests wait on it) and replays the request, and
+  only sends the user to `/login` when the refresh fails too. With `fetch` that's per-call boilerplate everywhere. See `frontend/src/api/client.ts`.
 - **Recharts** — the dashboard's area chart and sentiment pie. Declarative React components rather than D3's
   imperative DOM manipulation. Trade-off: much less flexible than raw D3 for anything unusual.
 - **Note:** `zustand` is in `package.json` but **unused** — auth state lives in React Context. Dead dependency;
@@ -445,7 +446,8 @@ For each: *what it does here* → *why it beat the obvious alternative* → *wha
 #### **JWT (python-jose) + bcrypt**
 
 - **What it does here:** `POST /api/auth/login` verifies a bcrypt hash and returns an HS256 JWT whose `sub` is
-  the user's UUID, expiring in 30 minutes. `get_current_user` decodes it, loads the user, checks `is_active`.
+  the user's UUID, expiring in 15 minutes, and sets a **refresh token** in an HttpOnly cookie (below).
+  `get_current_user` decodes the access token, loads the user, checks `is_active`.
   `require_role("admin")` is a dependency factory for role-gated routes.
 - **bcrypt and the event loop:** bcrypt is deliberately slow CPU work: 240 ms at cost 12 on a laptop, **1.7 s on
   Render's free CPU**. Called inline from an `async def` route it froze the event loop, so every other user
@@ -457,10 +459,20 @@ For each: *what it does here* → *why it beat the obvious alternative* → *wha
 - **Why JWT over server-side sessions:** the API is stateless and the frontend is on a different origin. A JWT
   travels in an `Authorization` header and needs no shared session store, so the backend can scale horizontally
   without sticky sessions or Redis.
-- **Trade-off, honestly:** the token lives in `localStorage`, which is **readable by any JavaScript on the
-  page** — XSS-exposed in a way an `HttpOnly` cookie wouldn't be. And JWTs **can't be revoked** before expiry;
-  the 30-minute lifetime is the mitigation, and there's no refresh flow, so users get logged out every
-  30 minutes. Both are known, deliberate MVP trade-offs.
+- **Refresh tokens:** an opaque random token in an `HttpOnly; Secure; SameSite=None; Partitioned` cookie
+  scoped to `/api/auth`, valid 14 days. The database stores only its SHA-256 (`refresh_tokens` table).
+  - **Rotation and reuse detection.** Every `POST /api/auth/refresh` revokes the presented token and issues a
+    successor in the same *family*. If a rotated token comes back, someone has a copy, so the whole family
+    is revoked. A 30-second grace window stops two tabs refreshing at once from looking like theft.
+  - **Logout revokes server-side.** `POST /api/auth/logout` revokes the family and clears the cookie.
+  - **CSRF.** The cookie has to be `SameSite=None`, because Netlify and Render are different sites. So refresh
+    and logout reject any `Origin` outside the CORS allow-list.
+  - **Why not the Netlify proxy (same-site cookie):** Netlify's proxy times out around 26 s, shorter than a
+    Render cold start.
+- **Trade-off, honestly:** the *access* token still lives in `localStorage` (readable by page scripts), but it
+  now lives 15 minutes and the long-lived credential is out of JavaScript's reach. Access JWTs still can't be
+  revoked before they expire; 15 minutes bounds that. **Safari** blocks third-party cookies by default, so
+  Safari users don't get silent refresh and log in again when the access token expires.
 
 ---
 
@@ -1008,7 +1020,7 @@ value; a 500 error has none.
 | **Any DB error in a request** | The `get_db` dependency rolls back and closes the session | `database.py` |
 | **ChromaDB unavailable** | `VectorStore` logs and returns empty results / `False` rather than raising, so a broken vector store degrades RAG instead of 500-ing the API | `rag/vectorstore.py` |
 | **Dashboard endpoint fails** | Frontend uses `Promise.allSettled`, so one failed panel doesn't blank the page; each falls back to empty rather than to plausible-looking fake data | `pages/Dashboard.tsx` |
-| **JWT expires mid-session** | Axios response interceptor catches `401`, clears localStorage, redirects to `/login` | `api/client.ts` |
+| **JWT expires mid-session** | Axios interceptor catches `401`, refreshes once from the HttpOnly cookie and replays; only a failed refresh sends the user to `/login` | `api/client.ts` |
 | **Prompt injection in the query** | `sanitize_query()` rejects with HTTP 400 before the string reaches any prompt | `core/sanitizer.py` |
 
 **The gap I'd name before they do:** the fallbacks are now *recorded* but still not *surfaced*. Every item
@@ -1329,20 +1341,26 @@ infrastructure on a free tier, and I know precisely what I traded away.
 
 Registration hashes the password with **bcrypt** — deliberately slow, with a per-password salt, so a leaked
 database is expensive to attack. Login verifies the hash and issues an **HS256 JWT** whose `sub` claim is the
-user's UUID, expiring in 30 minutes. Every protected route depends on `get_current_user`, which decodes the
+user's UUID, expiring in 15 minutes, plus a rotating refresh token in an HttpOnly cookie. Every protected
+route depends on `get_current_user`, which decodes the
 token, loads the user, and checks `is_active` — so a deactivated user is locked out immediately, without
 waiting for token expiry. Roles are enforced through a dependency factory, `require_role("admin")`.
 
 Why JWTs rather than server-side sessions: the API is stateless and the frontend is on a different origin, so
 a bearer token needs no shared session store and the backend can scale horizontally without sticky sessions.
 
-**Three weaknesses I'd name before you do:**
+**What it used to get wrong, and what changed:**
 
-1. The token lives in `localStorage`, which is **readable by any JavaScript on the page** — so it's exposed to
-   XSS in a way an `HttpOnly` cookie wouldn't be. The right fix is an HttpOnly, Secure, SameSite cookie.
-2. **JWTs can't be revoked** before expiry. The 30-minute lifetime is the mitigation. A proper fix is short
-   access tokens plus refresh tokens with a server-side revocation list.
-3. There's **no refresh flow**, so users are logged out every 30 minutes, which is bad UX.
+1. The only credential was a 30-minute JWT in `localStorage`, readable by any script on the page, with **no
+   refresh flow**, so users were logged out every 30 minutes. Now the access token lives 15 minutes and the
+   long-lived credential is a refresh token in an **HttpOnly, Secure, SameSite=None, Partitioned** cookie
+   that JavaScript cannot read. The Axios interceptor refreshes silently on a `401`.
+2. **Nothing could be revoked.** Refresh tokens are now stored (hashed) server-side, **rotated on every use**,
+   revoked on logout, and a reused rotated token revokes its whole family (theft detection). Access tokens
+   still can't be revoked before expiry; 15 minutes bounds that.
+3. **What's still imperfect:** the frontend and API are on different sites, so the cookie is third-party.
+   Chrome, Firefox and Edge accept it (partitioned), but Safari blocks it by default and Safari users fall
+   back to logging in again. The fix is serving the API from a subdomain of the frontend's site.
 
 **And a real bug that was here, which is worth telling as a story:** `create_user` hardcoded `role="admin"`,
 so **every** registration created an administrator. The `require_role("admin")` dependency was still correct —
@@ -1569,9 +1587,9 @@ has not changed.
 across instances. Postgres is already there, so `pgvector` means durable, backed-up, shared vectors and one
 fewer datastore to run.
 
-**4. Finish the auth hardening.** The JWT lives in `localStorage`, which is readable by any script on the page.
-HttpOnly + Secure + SameSite cookies, plus refresh tokens with a server-side revocation list, so a compromised
-token is not valid for its full 30 minutes.
+**4. Finish the auth hardening.** *(Mostly done: refresh tokens in an HttpOnly cookie, rotated, revocable,
+15-minute access tokens.)* What remains is putting the API on a subdomain of the frontend's site, so the cookie
+is first-party and Safari gets silent refresh too.
 
 **5. Surface provenance in the report itself.** Every item carries `metadata.is_mock` and MLflow records a
 `live_data_ratio` per run, so the data exists — the PDF just does not show it. A banner reading "71 of 99 items
@@ -1776,7 +1794,7 @@ picks any line off the page, this is the answer plus the file to open.
 | Claim | The defence | Source |
 |:--|:--|:--|
 | **29 REST endpoints** | Routes under `/api/*` across 8 routers — auth, workflows, reports, dashboard, rag, schedule, monitoring, admin. (34 total including `/docs`, `/openapi.json` and `/metrics`) | `app/api/` |
-| **JWT + RBAC** | HS256 token, `sub` = user UUID, 30-minute expiry; `require_role("admin")` dependency factory gates admin routes | `core/security.py` · Q14 |
+| **JWT + RBAC** | HS256 access token, `sub` = user UUID, 15-minute expiry; rotating refresh token in an HttpOnly cookie; `require_role("admin")` gates admin routes | `core/security.py`, `services/refresh_service.py` · Q14 |
 | **19 injection patterns** | Regex set covering instruction-override, role-play, delimiter and system-prompt attacks; raises before the string reaches any prompt | `core/sanitizer.py` · Q15 |
 | **4-strategy JSON recovery** | Direct parse → markdown fence → brace-balanced slice → greedy slice, each with a repair pass for trailing commas, curly quotes and raw newlines | `core/sanitizer.py` |
 | **Quota-aware retry** | 429 detection at every LLM call site, with backoff. Embedding aborts rather than writing a partial index; RAG returns retrieved context rather than nothing | `rag/embeddings.py`, `rag/retriever.py` · Q16 |

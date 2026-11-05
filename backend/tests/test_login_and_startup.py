@@ -194,7 +194,7 @@ class TestUserLoadIsConstant:
         # fix it was 7 + 1, and every scraped row was loaded.
         assert empty == full == 2
 
-    async def test_login_is_one_lookup_query(self, client, monkeypatch):
+    async def test_login_is_lookup_plus_token_insert(self, client, monkeypatch):
         await _register(client)
         await self._seed_history(n_workflows=3, rows_each=5)
         monkeypatch.setattr(settings, "PERF_DEBUG", True)
@@ -202,7 +202,8 @@ class TestUserLoadIsConstant:
         resp = await _login(client)
 
         assert resp.status_code == 200
-        assert int(resp.headers["x-sql-queries"]) == 1
+        # User lookup + refresh-token insert. Was 7 with the selectin cascade.
+        assert int(resp.headers["x-sql-queries"]) == 2
 
     async def test_relationships_never_load_implicitly(self, client):
         await _register(client)
