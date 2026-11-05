@@ -63,10 +63,10 @@ class Report(Base):
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(
-        "Workflow", back_populates="reports"
+        "Workflow", back_populates="reports", lazy="raise_on_sql"
     )
     user: Mapped["User"] = relationship(
-        "User", back_populates="reports"
+        "User", back_populates="reports", lazy="raise_on_sql"
     )
 
     def __repr__(self) -> str:

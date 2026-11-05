@@ -54,24 +54,39 @@ async def delete_workflow(db: AsyncSession, workflow_id) -> bool:
     return result.rowcount > 0
 
 
-async def fail_interrupted_workflows(db: AsyncSession) -> int:
+async def fail_interrupted_workflows(db: AsyncSession, created_before=None) -> int:
     """Mark workflows left pending/running by a previous process as failed.
 
     Workflows run as in-process background tasks, so a restart (redeploy,
     or the host killing the process) loses them. Without this they would
     show as in progress forever.
+
+    ``created_before`` limits it to rows from earlier processes. Startup runs
+    in the background while requests are already served, so a workflow a
+    user starts in that window must not be reaped.
     """
     from datetime import datetime, timezone
     from sqlalchemy import update
 
+    conditions = [Workflow.status.in_(["pending", "running"])]
+    if created_before is not None:
+        if db.bind.dialect.name == "sqlite":
+            # SQLite stores naive UTC timestamps; compare like with like.
+            created_before = created_before.astimezone(timezone.utc).replace(tzinfo=None)
+        conditions.append(Workflow.created_at < created_before)
+
     result = await db.execute(
         update(Workflow)
-        .where(Workflow.status.in_(["pending", "running"]))
+        .where(*conditions)
         .values(
             status="failed",
             result_summary="Interrupted by a server restart. Please run it again.",
             completed_at=datetime.now(timezone.utc),
         )
+        # Runs in a fresh session at startup: nothing in the identity map to
+        # sync, and evaluating the cutoff in Python trips over SQLite's naive
+        # timestamps.
+        .execution_options(synchronize_session=False)
     )
     await db.commit()
     return result.rowcount or 0

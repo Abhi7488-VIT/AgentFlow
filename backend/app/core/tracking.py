@@ -127,6 +127,13 @@ def log_workflow_run(
                     total_ms += elapsed
             metrics["total_agent_ms"] = float(total_ms)
 
+            # Phase-0 perf trace: stage totals and call counts per run.
+            perf = final_state.get("perf") or {}
+            for name, agg in (perf.get("spans") or {}).items():
+                metrics["perf_" + name.replace(".", "_") + "_ms"] = float(agg.get("ms", 0.0))
+            for key, value in (perf.get("counters") or {}).items():
+                metrics["perf_" + key.replace(".", "_")] = float(value)
+
             mlflow.log_metrics(metrics)
 
             review = final_state.get("review_feedback", {}) or {}

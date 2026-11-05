@@ -4,6 +4,7 @@ AgentFlow AI - Application Configuration
 Loads all settings from environment variables and .env file using pydantic-settings.
 """
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,7 +35,30 @@ class Settings(BaseSettings):
     # JWT Authentication
     JWT_SECRET_KEY: str = "super-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Short-lived: the frontend refreshes it silently from the refresh cookie.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+
+    # Refresh tokens: opaque, rotated on every use, stored hashed server side
+    # (app/models/refresh_token.py) and sent only as an HttpOnly cookie.
+    # The frontend (Netlify) and API (Render) are different sites, so the
+    # cookie must be SameSite=None + Secure to be sent at all. Partitioned
+    # (CHIPS) keys it to the frontend's site; Safari blocks third-party
+    # cookies by default, so Safari users fall back to logging in again.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    REFRESH_COOKIE_NAME: str = "agentflow_refresh"
+    REFRESH_COOKIE_PATH: str = "/api/auth"     # never sent to other endpoints
+    REFRESH_COOKIE_SECURE: bool = True         # browsers treat localhost as secure
+    REFRESH_COOKIE_SAMESITE: str = "none"      # "lax" when frontend and API share a site
+    REFRESH_COOKIE_PARTITIONED: bool = True
+    # Two tabs refreshing at the same moment both present the same token; the
+    # loser would look like token theft. Within this window a just-rotated
+    # token still gets an access token (but no new refresh token).
+    REFRESH_REUSE_GRACE_SECONDS: int = 30
+    # bcrypt cost factor for new hashes. Each step doubles the work: on
+    # Render's free CPU 12 took ~1.7 s per login, 11 is ~0.85 s. 11 stays
+    # above OWASP's minimum of 10. Existing hashes are upgraded or downgraded
+    # transparently on the user's next successful login.
+    BCRYPT_ROUNDS: int = Field(default=11, ge=10, le=15)
 
     # YouTube Data API
     YOUTUBE_API_KEY: str = ""
@@ -96,6 +120,30 @@ class Settings(BaseSettings):
     DEMO_ENABLED: bool = True
     DEMO_EMAIL: str = "demo@agentflow.app"
     DEMO_MAX_WORKFLOWS_PER_HOUR: int = 10
+
+    # Performance instrumentation. Workflow stage timings are always logged
+    # (one "workflow_perf" line per run). PERF_DEBUG additionally returns
+    # Server-Timing / X-SQL-Queries headers on every response - dev only,
+    # because the timings are a side channel (e.g. bcrypt duration).
+    PERF_DEBUG: bool = False
+    PERF_LOG_SQL: bool = False         # with PERF_DEBUG: keep each SQL statement in the trace
+
+    # Startup. The app answers /health as soon as uvicorn is listening; table
+    # creation, the interrupted-workflow reaper and the scheduler run in the
+    # background, and /health/ready reports 503 until they finish.
+    DB_CREATE_ALL_ON_STARTUP: bool = True
+    # Seconds after startup before the heavy agent / RAG modules (langgraph,
+    # chromadb, google-generativeai: ~4 s of imports locally, far more on a
+    # 0.1 vCPU host) are imported in a background thread, so the first
+    # workflow does not pay for them. Delayed so a cold-start login is not
+    # competing for the CPU. Negative disables the preload.
+    PRELOAD_DELAY_SECONDS: float = 20.0
+
+    # Connection pool. Recycle below Neon's 5-minute scale-to-zero so idle
+    # connections are replaced before the server side has dropped them.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_RECYCLE_SECONDS: int = 240
 
     # Application
     APP_NAME: str = "AgentFlow AI"

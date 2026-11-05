@@ -17,6 +17,7 @@ import google.generativeai as genai
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.core import perf
 
 logger = get_logger(__name__)
 
@@ -107,13 +108,15 @@ class EmbeddingGenerator:
         """Embed one batch with exponential-backoff retry on transient errors."""
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             try:
-                response = await asyncio.to_thread(
-                    genai.embed_content,
-                    model=EMBEDDING_MODEL,
-                    content=batch,
-                    task_type=task_type,
-                    output_dimensionality=EMBEDDING_DIM,
-                )
+                perf.incr("gemini.embed_calls")
+                with perf.span("gemini.embed.call", batch=len(batch)):
+                    response = await asyncio.to_thread(
+                        genai.embed_content,
+                        model=EMBEDDING_MODEL,
+                        content=batch,
+                        task_type=task_type,
+                        output_dimensionality=EMBEDDING_DIM,
+                    )
                 embedding = response["embedding"]
                 # A single string input returns a flat vector; normalise to a list.
                 if embedding and isinstance(embedding[0], (int, float)):
@@ -137,6 +140,9 @@ class EmbeddingGenerator:
                 logger.warning(
                     f"Embedding attempt {attempt} failed ({e}); retrying in {delay}s"
                 )
-                await asyncio.sleep(delay)
+                with perf.span(
+                    "gemini.embed.rate_limit_sleep" if is_rate_limit else "gemini.embed.error_sleep"
+                ):
+                    await asyncio.sleep(delay)
 
         return []

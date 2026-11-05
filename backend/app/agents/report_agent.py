@@ -8,6 +8,7 @@ from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
 from app.core.sanitizer import safe_query_for_prompt, extract_json
+from app.core import perf
 
 logger = get_logger(__name__)
 
@@ -103,7 +104,7 @@ Return JSON matching this exact schema:
     }}
 }}"""
             
-            response = await model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
+            response = await perf.timed_llm_call("report", model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS}))
             data = extract_json(response.text)
             
             # Validate that the report is actually about the query (not generic)
@@ -125,9 +126,11 @@ Return JSON matching this exact schema:
             # If we hit the Gemini rate limit (15 RPM free tier), we must wait for the minute to reset
             if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
                 logger.warning("Gemini API Rate Limit hit! Waiting 60 seconds for quota to reset...")
-                await asyncio.sleep(60)
+                with perf.span("gemini.report.rate_limit_sleep"):
+                    await asyncio.sleep(60)
             else:
-                await asyncio.sleep(3)
+                with perf.span("gemini.report.error_sleep"):
+                    await asyncio.sleep(3)
                 
             # Use Gemini to generate even the fallback, but with a simpler prompt
             try:
@@ -137,7 +140,7 @@ Return JSON matching this exact schema:
                 )
                 simple_prompt = f"""Write a market analysis report about "{query}" using your own knowledge. Name REAL competitors, REAL market data, REAL prices. Do NOT use placeholders like "Competitor A". Return JSON with keys: title (string), tagline (string), executive_summary (string, 2 paragraphs with real facts about {query}), recommendations (list of 5 specific strings), sections (object with "Product Overview", "Market & Competitor Analysis", "SWOT Analysis", "Recommendations", "Conclusion" — each a detailed string paragraph with real information about {query}), advanced_metrics (object with "Innovation Score", "Market Readiness Score", "Consumer Satisfaction" as strings with scores)."""
                 
-                simple_response = await simple_model.generate_content_async(simple_prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
+                simple_response = await perf.timed_llm_call("report_simple", simple_model.generate_content_async(simple_prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS}))
                 data = extract_json(simple_response.text)
                 state["report"] = data
                 logger.info("Simple fallback Gemini report generated")

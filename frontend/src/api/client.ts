@@ -1,11 +1,104 @@
-import axios from 'axios';
+import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
+
+// Render's free tier sleeps when idle and the first request after that
+// waits through a cold start (measured ~52 s, docs/PERF_BASELINE.md).
+// Normal requests time out well before that so a dead connection fails
+// fast; cold-start failures get one retry with a long timeout.
+const DEFAULT_TIMEOUT_MS = 30_000;
+export const COLD_START_TIMEOUT_MS = 90_000;
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: API_BASE_URL,
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Session endpoints that read or set the HttpOnly refresh cookie. The API is
+// on another site (Render vs Netlify), so the browser only sends or stores
+// that cookie when the request is made withCredentials. Kept separate from
+// apiClient so a failing refresh never re-enters the 401 handler below.
+const sessionClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: COLD_START_TIMEOUT_MS,
+  withCredentials: true,
+});
+
+/** Per-request opt-in: safe to send twice (login). Never set it on writes like createWorkflow. */
+type ColdStartOptions = AxiosRequestConfig & { coldStartRetry?: boolean };
+type RetryableConfig = InternalAxiosRequestConfig & {
+  coldStartRetry?: boolean;
+  _coldStartRetried?: boolean;
+  _authRetried?: boolean;
+};
+
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Trade the refresh cookie for a new access token. Single-flight: when
+ * several requests hit a 401 at once, they all wait on one refresh instead
+ * of each rotating the token. Resolves null when the session is over.
+ */
+export const refreshAccessToken = (): Promise<string | null> => {
+  if (!refreshPromise) {
+    refreshPromise = sessionClient
+      .post('/auth/refresh')
+      .then(({ data }) => {
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        return data.access_token as string;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+};
+
+/** Revoke the refresh token server-side and clear its cookie. Best effort. */
+export const logoutSession = async (): Promise<void> => {
+  try {
+    await sessionClient.post('/auth/logout', null, { timeout: DEFAULT_TIMEOUT_MS });
+  } catch {
+    // The local session is cleared regardless; the token expires on its own.
+  }
+};
+
+const endSession = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+};
+
+let wakePromise: Promise<boolean> | null = null;
+
+/**
+ * Ping the DB-free liveness endpoint so Render starts waking up while the
+ * user is still typing. Shared: concurrent callers wait on one request.
+ * Resolves true once the server answered.
+ */
+export const wakeServer = (): Promise<boolean> => {
+  if (!wakePromise) {
+    wakePromise = apiClient
+      .get('/health', { timeout: COLD_START_TIMEOUT_MS })
+      .then(() => true)
+      .catch(() => {
+        wakePromise = null; // let the next caller try again
+        return false;
+      });
+  }
+  return wakePromise;
+};
+
+const isColdStartFailure = (error: AxiosError) =>
+  error.code === 'ECONNABORTED' ||
+  error.code === 'ETIMEDOUT' ||
+  !error.response || // network error: instance still booting
+  [502, 503, 504].includes(error.response.status);
 
 // Request interceptor to add the auth token header to requests
 apiClient.interceptors.request.use((config) => {
@@ -16,14 +109,37 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle 401 Unauthorized errors globally
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+  async (error: AxiosError) => {
+    const config = error.config as RetryableConfig | undefined;
+    const idempotent =
+      config && (config.coldStartRetry || ['get', 'head'].includes((config.method || 'get').toLowerCase()));
+
+    // One retry, only for requests that are safe to repeat.
+    if (config && idempotent && !config._coldStartRetried && isColdStartFailure(error)) {
+      config._coldStartRetried = true;
+      config.timeout = COLD_START_TIMEOUT_MS;
+      await wakeServer();
+      return apiClient.request(config);
+    }
+
+    // 401 on an authenticated call: the access token expired. Refresh it
+    // silently and replay the request once. A 401 is returned before the
+    // route runs, so replaying even a POST cannot do the work twice.
+    // Not for the login request itself: a wrong password is a 401 too, and a
+    // redirect would reload the page and swallow the error message.
+    const isLoginCall = config?.url?.startsWith('/auth/login');
+    if (config && error.response?.status === 401 && !isLoginCall) {
+      if (!config._authRetried) {
+        config._authRetried = true;
+        const token = await refreshAccessToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+          return apiClient.request(config);
+        }
+      }
+      endSession();
     }
     return Promise.reject(error);
   }
@@ -71,8 +187,11 @@ export const deleteWorkflow = async (id: string) => {
 
 export const login = async (data: URLSearchParams) => {
   const res = await apiClient.post('/auth/login', data, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  });
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout: COLD_START_TIMEOUT_MS,
+    withCredentials: true, // lets the browser store the refresh cookie
+    coldStartRetry: true, // logging in twice is harmless
+  } as ColdStartOptions);
   return res.data;
 };
 
@@ -82,7 +201,11 @@ export const deleteReport = async (id: string) => {
 };
 
 export const demoLogin = async () => {
-  const res = await apiClient.post('/auth/demo');
+  const res = await apiClient.post('/auth/demo', null, {
+    timeout: COLD_START_TIMEOUT_MS,
+    withCredentials: true,
+    coldStartRetry: true,
+  } as ColdStartOptions);
   return res.data;
 };
 

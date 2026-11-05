@@ -11,19 +11,30 @@ from app.agents.insight_agent import insight_node
 from app.agents.report_agent import report_node
 from app.agents.reviewer_agent import reviewer_node
 from app.core.logging import get_logger
+from app.core import perf
 
 logger = get_logger(__name__)
+
+def _timed(name: str, node):
+    """Wrap a node so each pass is a span on the workflow's perf trace."""
+    async def wrapper(state: AgentState) -> AgentState:
+        perf.incr(f"agent.{name}.passes")
+        with perf.span(f"agent.{name}"):
+            return await node(state)
+    wrapper.__name__ = getattr(node, "__name__", name)
+    return wrapper
+
 
 def create_workflow_graph() -> CompiledStateGraph:
     workflow = StateGraph(AgentState)
     
     # Add nodes
-    workflow.add_node('research', research_node)
-    workflow.add_node('cleaning', cleaning_node)
-    workflow.add_node('nlp_analysis', nlp_node)
-    workflow.add_node('insights', insight_node)
-    workflow.add_node('report', report_node)
-    workflow.add_node('reviewer', reviewer_node)
+    workflow.add_node('research', _timed('research', research_node))
+    workflow.add_node('cleaning', _timed('cleaning', cleaning_node))
+    workflow.add_node('nlp_analysis', _timed('nlp_analysis', nlp_node))
+    workflow.add_node('insights', _timed('insights', insight_node))
+    workflow.add_node('report', _timed('report', report_node))
+    workflow.add_node('reviewer', _timed('reviewer', reviewer_node))
     
     # Add edges
     workflow.set_entry_point('research')

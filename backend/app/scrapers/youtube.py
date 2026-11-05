@@ -449,7 +449,7 @@ class YouTubeScraper(BaseScraper):
                     client, api_key, client_version, video, per_video
                 )
                 collected.extend(comments)
-                await asyncio.sleep(self.request_delay)
+                await self._sleep(self.request_delay)
 
             return collected[:max_results]
 

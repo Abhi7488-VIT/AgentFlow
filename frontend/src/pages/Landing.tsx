@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDemoLogin } from '../hooks/useDemoLogin';
+import { WAKING_UP_MESSAGE } from '../hooks/useSlowHint';
 
 /** GitHub mark; lucide dropped brand icons in v1. */
 const GithubIcon = ({ className = "" }: { className?: string }) => (
@@ -188,7 +189,9 @@ export const Landing = () => {
               </Link>
             )}
           </div>
-          {demo.error ? (
+          {demo.slow ? (
+            <p className="mt-3 text-sm text-clay-ink-muted" role="status">{WAKING_UP_MESSAGE}</p>
+          ) : demo.error ? (
             <p className="mt-3 text-sm text-clay-coral-dark">{demo.error}</p>
           ) : (
             !isAuthenticated && <p className="mt-3 text-sm text-clay-ink-muted">No signup needed for the demo.</p>

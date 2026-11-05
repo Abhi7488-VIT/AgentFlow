@@ -18,6 +18,7 @@ from app.agents.graph import run_workflow
 from app.core.logging import get_logger
 from app.rag.indexer import index_workflow_items
 from app.core.tracking import log_workflow_run
+from app.core import perf
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,17 @@ def _release_memory() -> None:
             pass
 
 async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str], user_id: UUID):
+    # One perf trace per run: every agent, scraper, Gemini call and the
+    # persistence transaction record spans on it, and the summary is logged
+    # as a single "workflow_perf" line at the end.
+    with perf.trace(f"workflow:{workflow_id}") as trace:
+        try:
+            await _execute_workflow_task(workflow_id, query, sources, user_id)
+        finally:
+            logger.info("workflow_perf", workflow_id=str(workflow_id), **trace.summary())
+
+
+async def _execute_workflow_task(workflow_id: UUID, query: str, sources: list[str], user_id: UUID):
     logger.info(f"Background task starting for workflow {workflow_id}")
     
     # Use the app's engine: it normalises hosted-Postgres URLs (Neon's
@@ -48,15 +60,18 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
     try:
         async with session_maker() as db:
             # Mark workflow as running
-            await db.execute(
-                update(Workflow)
-                .where(Workflow.id == workflow_id)
-                .values(status="running", started_at=datetime.now(timezone.utc))
-            )
-            await db.commit()
-            
+            with perf.span("workflow.mark_running"):
+                await db.execute(
+                    update(Workflow)
+                    .where(Workflow.id == workflow_id)
+                    .values(status="running", started_at=datetime.now(timezone.utc))
+                )
+                await db.commit()
+
             # Run LangGraph workflow
-            final_state = await run_workflow(query, sources, str(workflow_id))
+            with perf.span("workflow.graph"):
+                final_state = await run_workflow(query, sources, str(workflow_id))
+            persist_started = perf.current().elapsed_ms if perf.current() else 0.0
             
             # Save scraped data
             scraped_rows = []
@@ -81,22 +96,24 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
             # what lets a retrieved chunk be traced back to its source row.
             index_stats = {}
             if scraped_rows:
-                await db.flush()
-                index_stats = await index_workflow_items(
-                    db,
-                    workflow_id,
-                    [
-                        {
-                            "id": row.id,
-                            "content": row.content,
-                            "source": row.source,
-                            "metadata": row.metadata_ or {},
-                            "sentiment_label": row.sentiment_label,
-                            "sentiment_score": row.sentiment_score,
-                        }
-                        for row in scraped_rows
-                    ],
-                )
+                with perf.span("persist.flush_scraped"):
+                    await db.flush()
+                with perf.span("rag.index"):
+                    index_stats = await index_workflow_items(
+                        db,
+                        workflow_id,
+                        [
+                            {
+                                "id": row.id,
+                                "content": row.content,
+                                "source": row.source,
+                                "metadata": row.metadata_ or {},
+                                "sentiment_label": row.sentiment_label,
+                                "sentiment_score": row.sentiment_score,
+                            }
+                            for row in scraped_rows
+                        ],
+                    )
                 
             # Save analytics
             if final_state.get("sentiment_results"):
@@ -176,7 +193,11 @@ async def execute_workflow_task(workflow_id: UUID, query: str, sources: list[str
                 )
             )
             
-            await db.commit()
+            with perf.span("persist.commit"):
+                await db.commit()
+            if perf.current():
+                perf.record("persist.total", perf.current().elapsed_ms - persist_started)
+                final_state["perf"] = perf.current().summary()
 
             # Best-effort experiment tracking; never fails the workflow.
             log_workflow_run(workflow_id, query, sources, final_state, index_stats)

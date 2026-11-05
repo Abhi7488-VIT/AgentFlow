@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.core import perf
 from app.models.embedding_metadata import EmbeddingMetadata
 from app.models.scraped_data import ScrapedData
 from app.rag.embeddings import EmbeddingGenerator
@@ -140,7 +141,9 @@ async def index_workflow_items(db, workflow_id, items: list[dict]) -> dict:
             return stats
 
         generator = EmbeddingGenerator()
-        embeddings = await generator.generate(texts, task_type="retrieval_document")
+        perf.incr("rag.chunks", len(texts))
+        with perf.span("rag.embed"):
+            embeddings = await generator.generate(texts, task_type="retrieval_document")
 
         if generator.is_available and not embeddings:
             # Gemini is configured but failed. Indexing text-only would make
@@ -156,13 +159,14 @@ async def index_workflow_items(db, workflow_id, items: list[dict]) -> dict:
         stats["embedding_model"] = model_name
 
         store = VectorStore()
-        ok = await store.add_documents(
-            collection_name=collection,
-            texts=texts,
-            metadatas=metadatas,
-            ids=ids,
-            embeddings=embeddings or None,
-        )
+        with perf.span("rag.upsert"):
+            ok = await store.add_documents(
+                collection_name=collection,
+                texts=texts,
+                metadatas=metadatas,
+                ids=ids,
+                embeddings=embeddings or None,
+            )
         if not ok:
             return stats
 

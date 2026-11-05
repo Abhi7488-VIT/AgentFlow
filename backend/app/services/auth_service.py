@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from app.models.user import User
 from app.schemas.user import UserCreate
 from app.config import settings
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password_async, verify_password_async
 
 
 async def role_for_new_user(db: AsyncSession, email: str) -> str:
@@ -22,7 +22,7 @@ async def role_for_new_user(db: AsyncSession, email: str) -> str:
 
 
 async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
-    hashed = hash_password(user_data.password)
+    hashed = await hash_password_async(user_data.password)
     role = await role_for_new_user(db, user_data.email)
 
     user = User(
@@ -41,7 +41,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     user = result.scalar_one_or_none()
     if not user:
         return None
-    if not verify_password(password, user.hashed_password):
+    if not await verify_password_async(password, user.hashed_password):
         return None
     return user
 

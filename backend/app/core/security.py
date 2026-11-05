@@ -1,5 +1,7 @@
 """Password hashing, JWT creation, and the current-user dependency."""
 
+import asyncio
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -13,6 +15,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.core import perf
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -20,10 +23,58 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 DEMO_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    salt = bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS)
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
+        # Malformed stored hash: treat as a failed login, never a 500.
+        return False
+
+
+def hash_rounds(hashed_password: str) -> int | None:
+    """Cost factor of a bcrypt hash (``$2b$12$...`` -> 12)."""
+    try:
+        return int(hashed_password.split("$")[2])
+    except (IndexError, ValueError):
+        return None
+
+
+def needs_rehash(hashed_password: str) -> bool:
+    """True when the hash was made with a different cost than configured."""
+    return hash_rounds(hashed_password) != settings.BCRYPT_ROUNDS
+
+
+# bcrypt is deliberately slow CPU work (about 240 ms at cost 12 on a laptop and
+# 1.7 s on Render's shared CPU, see docs/PERF_BASELINE.md). Called inline from
+# an async route it freezes the event loop, so every other request waits
+# behind a login. These run it in the default thread pool; bcrypt releases
+# the GIL while hashing.
+
+async def hash_password_async(password: str) -> str:
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+_dummy_hash: str | None = None
+
+
+async def burn_password_check(plain_password: str) -> None:
+    """Spend the same bcrypt time as a real check, for unknown emails.
+
+    Without it, "no such user" answers in one DB round trip while "wrong
+    password" takes a full bcrypt verify. In production the gap was 0.4 s vs
+    2.1 s, which tells an attacker which emails have accounts.
+    """
+    global _dummy_hash
+    if _dummy_hash is None or hash_rounds(_dummy_hash) != settings.BCRYPT_ROUNDS:
+        _dummy_hash = await hash_password_async(secrets.token_urlsafe(16))
+    await verify_password_async(plain_password, _dummy_hash)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -67,8 +118,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    with perf.span("auth.user_load"):
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
     
     if user is None or not user.is_active:
         raise HTTPException(

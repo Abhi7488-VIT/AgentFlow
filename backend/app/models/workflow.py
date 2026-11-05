@@ -54,16 +54,16 @@ class Workflow(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(
-        "User", back_populates="workflows"
+        "User", back_populates="workflows", lazy="raise_on_sql"
     )
     reports: Mapped[list["Report"]] = relationship(
-        "Report", back_populates="workflow", lazy="selectin"
+        "Report", back_populates="workflow", lazy="raise_on_sql"
     )
     scraped_data: Mapped[list["ScrapedData"]] = relationship(
-        "ScrapedData", back_populates="workflow", lazy="selectin"
+        "ScrapedData", back_populates="workflow", lazy="raise_on_sql"
     )
     agent_logs: Mapped[list["AgentLog"]] = relationship(
-        "AgentLog", back_populates="workflow", lazy="selectin"
+        "AgentLog", back_populates="workflow", lazy="raise_on_sql"
     )
 
     def __repr__(self) -> str:

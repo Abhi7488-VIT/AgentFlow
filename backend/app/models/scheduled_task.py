@@ -56,7 +56,7 @@ class ScheduledTask(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", lazy="selectin")
+    user: Mapped["User"] = relationship("User", lazy="raise_on_sql")
 
     def __repr__(self) -> str:
         return f"<ScheduledTask(id={self.id}, name={self.name})>"

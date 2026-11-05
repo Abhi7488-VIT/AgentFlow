@@ -15,9 +15,21 @@ from app.core.sanitizer import sanitize_query
 from app.models.user import User
 from app.schemas.workflow import WorkflowCreate, WorkflowResponse, WorkflowListResponse
 from app.services import workflow_service
-from app.workers.tasks import execute_workflow_task
 
 router = APIRouter()
+
+
+async def execute_workflow_task(**kwargs) -> None:
+    """Run a workflow, importing the agent stack on first use.
+
+    ``app.workers.tasks`` pulls in langgraph, chromadb and google-generativeai
+    (about 4 s of the 5.6 s boot, see docs/PERF_BASELINE.md). Importing it
+    lazily keeps them off the cold-start path, so the API answers login and
+    dashboard requests sooner after Render wakes the instance.
+    """
+    from app.workers import tasks
+
+    await tasks.execute_workflow_task(**kwargs)
 
 
 async def _enforce_demo_quota(db: AsyncSession, user_id) -> None:

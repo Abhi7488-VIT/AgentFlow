@@ -13,6 +13,15 @@ import os
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,https://agentflow.example.app")
 os.environ.setdefault("CORS_ORIGIN_REGEX", r"https://agentflow-[a-z0-9-]+\.vercel\.app")
 
+# The suite must stay offline. Settings reads backend/.env, which on a
+# developer machine holds real credentials; environment variables take
+# precedence over .env, so blanking them here guarantees no test can reach
+# Gemini, YouTube or Reddit with a real key (and burn the free-tier quota).
+for _secret in (
+    "GEMINI_API_KEY", "YOUTUBE_API_KEY", "REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET",
+):
+    os.environ[_secret] = ""
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

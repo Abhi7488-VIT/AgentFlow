@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { logoutSession } from '../api/client';
 
 interface User {
   id: string;
@@ -47,6 +48,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    // Revoke the refresh token too, or the next visit would silently log
+    // back in from the cookie. Fire-and-forget: local logout is immediate.
+    void logoutSession();
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');
