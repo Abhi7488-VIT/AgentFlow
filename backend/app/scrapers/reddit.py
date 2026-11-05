@@ -265,7 +265,7 @@ class RedditScraper(BaseScraper):
 
             if response.status_code == 429:
                 self.logger.warning("reddit_rate_limited", path=path)
-                await asyncio.sleep(5)
+                await self._sleep(5, reason="http_429")
                 return None
             if response.status_code != 200:
                 self.logger.warning(
@@ -280,7 +280,7 @@ class RedditScraper(BaseScraper):
                     if float(remaining) < 5:
                         reset = float(response.headers.get("x-ratelimit-reset", 10))
                         self.logger.info("reddit_quota_low", sleeping=reset)
-                        await asyncio.sleep(min(reset, 60))
+                        await self._sleep(min(reset, 60), reason="quota_low")
                 except ValueError:
                     pass
 
@@ -427,7 +427,7 @@ class RedditScraper(BaseScraper):
                     if len(results) < max_results:
                         results.extend(await self._fetch_comments(client, data))
 
-                await asyncio.sleep(self.request_delay)
+                await self._sleep(self.request_delay)
 
         self.logger.info("reddit_results_collected", count=len(results))
         return results[:max_results]

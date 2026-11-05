@@ -7,6 +7,7 @@ from app.nlp.topics import TopicExtractor
 from app.nlp.keywords import KeywordExtractor
 from app.nlp.trends import TrendAnalyzer
 from app.core.logging import get_logger
+from app.core import perf
 
 logger = get_logger(__name__)
 
@@ -24,7 +25,8 @@ async def nlp_node(state: AgentState) -> AgentState:
     
     # Run NLP pipelines
     sentiment_analyzer = SentimentAnalyzer()
-    sentiment_results = await sentiment_analyzer.analyze(texts)
+    with perf.span("nlp.sentiment"):
+        sentiment_results = await sentiment_analyzer.analyze(texts)
     
     # Attach sentiment to data
     for i, item in enumerate(cleaned_data):
@@ -33,13 +35,16 @@ async def nlp_node(state: AgentState) -> AgentState:
             item["sentiment_score"] = sentiment_results[i]["score"]
             
     topic_extractor = TopicExtractor()
-    topics = topic_extractor.extract_topics(texts)
+    with perf.span("nlp.topics"):
+        topics = topic_extractor.extract_topics(texts)
     
     keyword_extractor = KeywordExtractor()
-    keywords = keyword_extractor.extract_keywords(texts)
+    with perf.span("nlp.keywords"):
+        keywords = keyword_extractor.extract_keywords(texts)
     
     trend_analyzer = TrendAnalyzer()
-    trends = trend_analyzer.analyze_trends(cleaned_data)
+    with perf.span("nlp.trends"):
+        trends = trend_analyzer.analyze_trends(cleaned_data)
     
     # Update state
     state["sentiment_results"] = sentiment_results

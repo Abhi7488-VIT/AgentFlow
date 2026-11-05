@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.core import perf
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
@@ -67,8 +68,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    with perf.span("auth.user_load"):
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
     
     if user is None or not user.is_active:
         raise HTTPException(

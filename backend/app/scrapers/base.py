@@ -11,6 +11,8 @@ from typing import Any
 
 import structlog
 
+from app.core import perf
+
 log: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
@@ -36,6 +38,18 @@ class BaseScraper(abc.ABC):
         self._last_request_time: float = 0.0
         self.logger = log.bind(scraper=self.__class__.__name__)
 
+    @property
+    def source(self) -> str:
+        """Short source name used in timing spans, e.g. ``amazon``."""
+        return self.__class__.__name__.removesuffix("Scraper").lower()
+
+    async def _sleep(self, seconds: float, reason: str = "request_delay") -> None:
+        """``asyncio.sleep`` that is recorded on the active perf trace."""
+        if seconds <= 0:
+            return
+        with perf.span(f"scrape.{self.source}.sleep", reason=reason):
+            await asyncio.sleep(seconds)
+
     # ------------------------------------------------------------------ #
     #  Rate limiter
     # ------------------------------------------------------------------ #
@@ -46,7 +60,7 @@ class BaseScraper(abc.ABC):
         if elapsed < self.request_delay:
             wait = self.request_delay - elapsed
             self.logger.debug("rate_limit_wait", wait_seconds=round(wait, 3))
-            await asyncio.sleep(wait)
+            await self._sleep(wait, reason="rate_limit")
         self._last_request_time = time.monotonic()
 
     # ------------------------------------------------------------------ #
@@ -69,7 +83,9 @@ class BaseScraper(abc.ABC):
                     max_results=max_results,
                 )
                 await self._rate_limit()
-                results = await self._scrape_impl(query, max_results)
+                perf.incr(f"scrape.{self.source}.attempts")
+                with perf.span(f"scrape.{self.source}.attempt", attempt=attempt):
+                    results = await self._scrape_impl(query, max_results)
                 self.logger.info(
                     "scrape_success",
                     attempt=attempt,
@@ -86,7 +102,7 @@ class BaseScraper(abc.ABC):
                     next_delay=round(delay, 2),
                 )
                 if attempt < self.max_retries:
-                    await asyncio.sleep(delay)
+                    await self._sleep(delay, reason="retry_backoff")
 
         self.logger.error("scrape_failed_all_retries", error=str(last_exc))
         raise RuntimeError(
@@ -105,7 +121,12 @@ class BaseScraper(abc.ABC):
 
         Delegates to :py:meth:`_scrape_impl` via the retry wrapper.
         """
-        return await self._execute_with_retry(query, max_results)
+        with perf.span(f"scrape.{self.source}.total"):
+            results = await self._execute_with_retry(query, max_results)
+        mock = sum(1 for r in results if (r.get("metadata") or {}).get("is_mock"))
+        perf.incr(f"scrape.{self.source}.items", len(results))
+        perf.incr(f"scrape.{self.source}.mock_items", mock)
+        return results
 
     # ------------------------------------------------------------------ #
     #  Subclass contract

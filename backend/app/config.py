@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     DEMO_EMAIL: str = "demo@agentflow.app"
     DEMO_MAX_WORKFLOWS_PER_HOUR: int = 10
 
+    # Performance instrumentation. Workflow stage timings are always logged
+    # (one "workflow_perf" line per run). PERF_DEBUG additionally returns
+    # Server-Timing / X-SQL-Queries headers on every response - dev only,
+    # because the timings are a side channel (e.g. bcrypt duration).
+    PERF_DEBUG: bool = False
+    PERF_LOG_SQL: bool = False         # with PERF_DEBUG: keep each SQL statement in the trace
+
     # Application
     APP_NAME: str = "AgentFlow AI"
     DEBUG: bool = False

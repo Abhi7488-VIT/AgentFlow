@@ -13,6 +13,7 @@ from app.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, require_role
 from app.schemas.user import UserCreate, TokenResponse, UserResponse
 from app.services.auth_service import create_user
+from app.core import perf
 
 router = APIRouter()
 
@@ -48,12 +49,18 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     # Try to authenticate user
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == form_data.username.lower())
-    )
-    user = result.scalar_one_or_none()
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    with perf.span("auth.db_lookup"):
+        result = await db.execute(
+            select(User).where(func.lower(User.email) == form_data.username.lower())
+        )
+        user = result.scalar_one_or_none()
+
+    password_ok = False
+    if user:
+        with perf.span("auth.bcrypt_verify"):
+            password_ok = verify_password(form_data.password, user.hashed_password)
+
+    if not user or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -66,8 +73,9 @@ async def login(
             detail="Inactive user"
         )
         
-    access_token = create_access_token(data={"sub": str(user.id)})
-    
+    with perf.span("auth.token_create"):
+        access_token = create_access_token(data={"sub": str(user.id)})
+
     return {
         "access_token": access_token,
         "token_type": "bearer",

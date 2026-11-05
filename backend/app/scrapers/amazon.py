@@ -27,6 +27,7 @@ import structlog
 from bs4 import BeautifulSoup
 
 from app.config import settings
+from app.core import perf
 from app.scrapers.base import BaseScraper
 from app.scrapers.web import browser_headers, new_client, parse_count
 
@@ -423,7 +424,7 @@ class AmazonScraper(BaseScraper):
             # Warm the session: search requests from a cookie-less client are
             # the first thing Amazon's bot detection rejects.
             await self._get(client, f"{base}/")
-            await asyncio.sleep(self.request_delay)
+            await self._sleep(self.request_delay)
 
             search_html = await self._get(
                 client, f"{base}/s", params={"k": query}, referer=f"{base}/"
@@ -446,7 +447,7 @@ class AmazonScraper(BaseScraper):
                 if len(collected) >= max_results:
                     break
 
-                await asyncio.sleep(self.request_delay)
+                await self._sleep(self.request_delay)
                 detail_html = await self._get(
                     client,
                     f"{base}/dp/{product['asin']}",
@@ -489,8 +490,10 @@ class AmazonScraper(BaseScraper):
             return self._mock(query, max_results, "DEBUG=True")
 
         for marketplace in self.MARKETPLACES:
+            perf.incr("scrape.amazon.marketplaces_tried")
             try:
-                results = await self._collect_from(marketplace, query, max_results)
+                with perf.span("scrape.amazon.marketplace", marketplace=marketplace):
+                    results = await self._collect_from(marketplace, query, max_results)
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "amazon_marketplace_error",

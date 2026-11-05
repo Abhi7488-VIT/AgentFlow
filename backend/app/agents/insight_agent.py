@@ -8,6 +8,7 @@ from app.config import settings
 from app.agents.state import AgentState
 from app.core.logging import get_logger
 from app.core.sanitizer import safe_query_for_prompt, extract_json
+from app.core import perf
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,7 @@ async def insight_node(state: AgentState) -> AgentState:
             }}
             """
             
-            response = await model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS})
+            response = await perf.timed_llm_call("insights", model.generate_content_async(prompt, request_options={"timeout": settings.GEMINI_TIMEOUT_SECONDS}))
             data = extract_json(response.text)
             
             state["insights"] = data.get("insights", {})
@@ -56,9 +57,11 @@ async def insight_node(state: AgentState) -> AgentState:
             logger.error(f"Error using Gemini for insights: {e}")
             if "429" in str(e) or "ResourceExhausted" in str(e) or "quota" in str(e).lower():
                 logger.warning("Gemini API Rate Limit hit! Waiting 60 seconds...")
-                await asyncio.sleep(60)
+                with perf.span("gemini.insights.rate_limit_sleep"):
+                    await asyncio.sleep(60)
             else:
-                await asyncio.sleep(2)  # Delay in case of rate limit (429)
+                with perf.span("gemini.insights.error_sleep"):
+                    await asyncio.sleep(2)  # Delay in case of rate limit (429)
             _fallback_insights(state)
     else:
         _fallback_insights(state)

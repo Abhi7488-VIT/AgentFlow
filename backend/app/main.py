@@ -1,6 +1,10 @@
 """AgentFlow AI - FastAPI application entry point."""
 
-from contextlib import asynccontextmanager
+import time as _time
+
+_BOOT_STARTED = _time.perf_counter()
+
+from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +14,8 @@ from app.database import async_session_factory, init_db
 from app.services.workflow_service import fail_interrupted_workflows
 from app.core.exceptions import AppError, app_error_handler
 from app.core.middleware import RequestLoggingMiddleware, PrometheusMiddleware
+from app.core import perf
+from app.core.perf import PerfMiddleware
 from app.config import settings
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.core.logging import get_logger
@@ -25,16 +31,28 @@ from app.api.admin import router as admin_router
 
 logger = get_logger(__name__)
 
+# Imports above are the bulk of boot time on a cold start.
+_BOOT_READY = _time.perf_counter()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up application...")
-    await init_db()
-    async with async_session_factory() as db:
-        interrupted = await fail_interrupted_workflows(db)
-    if interrupted:
-        logger.warning(f"Marked {interrupted} interrupted workflow(s) as failed")
-    start_scheduler()
+    with perf.trace("startup") as boot:
+        with perf.span("startup.init_db"):
+            await init_db()
+        with perf.span("startup.reaper"):
+            async with async_session_factory() as db:
+                interrupted = await fail_interrupted_workflows(db)
+        if interrupted:
+            logger.warning(f"Marked {interrupted} interrupted workflow(s) as failed")
+        with perf.span("startup.scheduler"):
+            start_scheduler()
+    logger.info(
+        "startup_perf",
+        import_ms=round((_BOOT_READY - _BOOT_STARTED) * 1000, 1),
+        **boot.summary(),
+    )
     yield
     logger.info("Shutting down application...")
     stop_scheduler()
@@ -61,6 +79,8 @@ app.add_middleware(
 )
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(PrometheusMiddleware)
+# Added last so it is outermost: the trace covers the whole request.
+app.add_middleware(PerfMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
 
