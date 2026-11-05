@@ -148,3 +148,41 @@ is a dependency with **zero imports**. No `React.lazy` anywhere.
 3. Login: bcrypt in `asyncio.to_thread`.
 4. Boot: lazy-import chromadb, generativeai and langgraph.
 5. Bundle: lazy Dashboard route so Recharts (about 45%) leaves the entry chunk; drop zustand.
+
+---
+
+## Production measurements (added 2026-11-05)
+
+Measured against `https://agentflow-backend-uosi.onrender.com` (Render free, Singapore) from India, before
+Phase 1 was deployed. Medians of 5. Client-side timings, so they include the network round trip.
+
+| Operation | p50 | Note |
+|---|---|---|
+| First request after idle (Render cold start) | **51.7 s** | |
+| `GET /` (no DB) | 362 ms | Round trip plus the middleware stack on a 0.1 vCPU |
+| `GET /api/monitoring/health` (1 query) | 416 ms | |
+| Same, first query after 7 min idle (Neon wake) | 486 ms | **Neon wake-up costs under 0.1 s.** Render's health check was hitting this DB endpoint, which kept Neon awake. |
+| `POST /api/auth/login`, unknown email | 439 ms | lookup only |
+| `POST /api/auth/login`, wrong password | **2,151 ms** | **bcrypt is about 1.7 s on Render's CPU**, and the 1.7 s gap reveals which emails exist |
+| `POST /api/auth/demo` (no bcrypt) | 514 ms | |
+| Dashboard / list endpoints (demo user, 1 workflow) | 521-614 ms | |
+
+The keep-warm GitHub workflow never pinged: every run was `skipped` (the `BACKEND_URL` variable is unset).
+GitHub also throttled the `*/10` schedule to one run every 4-8 hours.
+
+## After Phase 1 (local, same method as above)
+
+| Operation | Before | After |
+|---|---|---|
+| `import app.main` | 5.6 s | **1.6 s** (chromadb / langgraph / generativeai no longer imported at boot) |
+| Startup work before serving | init_db + reaper + scheduler, awaited | none: runs in the background, `/health/ready` reports it |
+| Login SQL queries | 7 | **1** |
+| Login, 60 workflows of history | 582 ms (lookup 208, bcrypt 274) | **166 ms** (lookup 1.3, bcrypt 164 at cost 11, off the event loop) |
+| Authenticated request, user load @ 60 wf | ~300 ms, 7 queries | **~1.2 ms, 1 query**, constant in history |
+| `/api/dashboard/overview` @ 60 wf | 333 ms, 13 queries | 16 ms, 7 queries |
+| `/api/dashboard/sentiment`, keywords, competitors, recent-activity @ 60 wf | 328-355 ms, 8-11 queries | 4-9 ms, 2 queries |
+| `/api/workflows/`, `/api/reports/` @ 60 wf | 376 / 319 ms | 6 / 7 ms, 3 queries |
+| `/api/dashboard/trends` @ 60 wf | 461 ms | 134 ms. Still grows: it aggregates rows in Python (Phase 2) |
+
+Expected in production (estimate until redeployed): login about 2.1 s → about 1.3 s (bcrypt 1.7 → 0.85 s),
+and the user load per request drops from 7 round trips to 1.

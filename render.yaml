@@ -9,7 +9,9 @@ services:
     plan: free
     # Same region as the Neon database, so queries stay fast.
     region: singapore
-    healthCheckPath: /api/monitoring/health
+    # Liveness only (no DB). A DB-backed check every few seconds would keep
+    # Neon from ever scaling to zero. Readiness is GET /health/ready.
+    healthCheckPath: /health
     envVars:
       - key: APP_NAME
         value: AgentFlow AI

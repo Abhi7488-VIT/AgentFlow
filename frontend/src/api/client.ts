@@ -1,11 +1,52 @@
-import axios from 'axios';
+import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
+
+// Render's free tier sleeps when idle and the first request after that
+// waits through a cold start (measured ~52 s, docs/PERF_BASELINE.md).
+// Normal requests time out well before that so a dead connection fails
+// fast; cold-start failures get one retry with a long timeout.
+const DEFAULT_TIMEOUT_MS = 30_000;
+export const COLD_START_TIMEOUT_MS = 90_000;
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+/** Per-request opt-in: safe to send twice (login). Never set it on writes like createWorkflow. */
+type ColdStartOptions = AxiosRequestConfig & { coldStartRetry?: boolean };
+type RetryableConfig = InternalAxiosRequestConfig & {
+  coldStartRetry?: boolean;
+  _coldStartRetried?: boolean;
+};
+
+let wakePromise: Promise<boolean> | null = null;
+
+/**
+ * Ping the DB-free liveness endpoint so Render starts waking up while the
+ * user is still typing. Shared: concurrent callers wait on one request.
+ * Resolves true once the server answered.
+ */
+export const wakeServer = (): Promise<boolean> => {
+  if (!wakePromise) {
+    wakePromise = apiClient
+      .get('/health', { timeout: COLD_START_TIMEOUT_MS })
+      .then(() => true)
+      .catch(() => {
+        wakePromise = null; // let the next caller try again
+        return false;
+      });
+  }
+  return wakePromise;
+};
+
+const isColdStartFailure = (error: AxiosError) =>
+  error.code === 'ECONNABORTED' ||
+  error.code === 'ETIMEDOUT' ||
+  !error.response || // network error: instance still booting
+  [502, 503, 504].includes(error.response.status);
 
 // Request interceptor to add the auth token header to requests
 apiClient.interceptors.request.use((config) => {
@@ -16,11 +57,26 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle 401 Unauthorized errors globally
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
+  async (error: AxiosError) => {
+    const config = error.config as RetryableConfig | undefined;
+    const idempotent =
+      config && (config.coldStartRetry || ['get', 'head'].includes((config.method || 'get').toLowerCase()));
+
+    // One retry, only for requests that are safe to repeat.
+    if (config && idempotent && !config._coldStartRetried && isColdStartFailure(error)) {
+      config._coldStartRetried = true;
+      config.timeout = COLD_START_TIMEOUT_MS;
+      await wakeServer();
+      return apiClient.request(config);
+    }
+
+    // 401 on an authenticated call: the session is gone, back to login.
+    // Not for the login request itself: a wrong password is a 401 too, and a
+    // redirect would reload the page and swallow the error message.
+    const isLoginCall = config?.url?.startsWith('/auth/login');
+    if (error.response && error.response.status === 401 && !isLoginCall) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -71,8 +127,10 @@ export const deleteWorkflow = async (id: string) => {
 
 export const login = async (data: URLSearchParams) => {
   const res = await apiClient.post('/auth/login', data, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  });
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout: COLD_START_TIMEOUT_MS,
+    coldStartRetry: true, // logging in twice is harmless
+  } as ColdStartOptions);
   return res.data;
 };
 
@@ -82,7 +140,10 @@ export const deleteReport = async (id: string) => {
 };
 
 export const demoLogin = async () => {
-  const res = await apiClient.post('/auth/demo');
+  const res = await apiClient.post('/auth/demo', null, {
+    timeout: COLD_START_TIMEOUT_MS,
+    coldStartRetry: true,
+  } as ColdStartOptions);
   return res.data;
 };
 

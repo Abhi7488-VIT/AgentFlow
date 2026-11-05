@@ -10,7 +10,14 @@ from fastapi.security import OAuth2PasswordRequestForm
 from app.database import get_db
 from app.models.user import User
 from app.config import settings
-from app.core.security import hash_password, verify_password, create_access_token, require_role
+from app.core.security import (
+    burn_password_check,
+    create_access_token,
+    hash_password_async,
+    needs_rehash,
+    require_role,
+    verify_password_async,
+)
 from app.schemas.user import UserCreate, TokenResponse, UserResponse
 from app.services.auth_service import create_user
 from app.core import perf
@@ -56,9 +63,13 @@ async def login(
         user = result.scalar_one_or_none()
 
     password_ok = False
-    if user:
-        with perf.span("auth.bcrypt_verify"):
-            password_ok = verify_password(form_data.password, user.hashed_password)
+    with perf.span("auth.bcrypt_verify"):
+        if user:
+            password_ok = await verify_password_async(form_data.password, user.hashed_password)
+        else:
+            # Same cost as a real check, so response time does not reveal
+            # whether the email has an account.
+            await burn_password_check(form_data.password)
 
     if not user or not password_ok:
         raise HTTPException(
@@ -73,6 +84,12 @@ async def login(
             detail="Inactive user"
         )
         
+    if needs_rehash(user.hashed_password):
+        # Moves stored hashes to the configured BCRYPT_ROUNDS on next login;
+        # committed by get_db with the rest of the request.
+        with perf.span("auth.rehash"):
+            user.hashed_password = await hash_password_async(form_data.password)
+
     with perf.span("auth.token_create"):
         access_token = create_access_token(data={"sub": str(user.id)})
 
@@ -105,7 +122,7 @@ async def demo_login(db: AsyncSession = Depends(get_db)):
     if user is None:
         user = User(
             email=settings.DEMO_EMAIL,
-            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            hashed_password=await hash_password_async(secrets.token_urlsafe(32)),
             full_name="Demo Visitor",
             role="viewer",
         )

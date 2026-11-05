@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bot, LogIn, Loader2, Sparkles } from 'lucide-react';
 import { useDemoLogin } from '../hooks/useDemoLogin';
+import { useSlowHint, WAKING_UP_MESSAGE } from '../hooks/useSlowHint';
 import { useAuth } from '../context/AuthContext';
 import { login as apiLogin } from '../api/client';
 
@@ -13,6 +15,7 @@ export const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const demo = useDemoLogin();
+  const slow = useSlowHint(loading) || demo.slow;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,8 +30,12 @@ export const Login = () => {
       const data = await apiLogin(formData);
       login(data.access_token, data.user);
       navigate('/app');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to login');
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : undefined;
+      const timedOut = axios.isAxiosError(err) && (err.code === 'ECONNABORTED' || !err.response);
+      setError(
+        detail || (timedOut ? 'The server did not answer in time. Please try again.' : 'Failed to login'),
+      );
     } finally {
       setLoading(false);
     }
@@ -52,7 +59,13 @@ export const Login = () => {
             <p className="text-clay-ink-muted mt-2">Log in to your AgentFlow workspace</p>
           </div>
 
-          {(error || demo.error) && (
+          {slow && (
+            <div className="bg-clay-blue/10 border-2 border-clay-blue/20 text-clay-ink p-3 rounded-xl mb-6 text-sm text-center" role="status">
+              {WAKING_UP_MESSAGE}
+            </div>
+          )}
+
+          {!slow && (error || demo.error) && (
             <div className="bg-clay-coral/10 border-2 border-clay-coral/20 text-clay-coral-dark p-3 rounded-xl mb-6 text-sm text-center">
               {error || demo.error}
             </div>

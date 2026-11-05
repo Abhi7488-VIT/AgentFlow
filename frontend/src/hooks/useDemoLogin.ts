@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { demoLogin } from '../api/client';
+import { useSlowHint } from './useSlowHint';
 
 /** Signs into the shared demo account and opens the dashboard. */
 export const useDemoLogin = () => {
@@ -10,6 +11,7 @@ export const useDemoLogin = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
+  const slow = useSlowHint(loading);
 
   const start = async () => {
     setLoading(true);
@@ -26,5 +28,5 @@ export const useDemoLogin = () => {
     }
   };
 
-  return { start, loading, error };
+  return { start, loading, error, slow };
 };

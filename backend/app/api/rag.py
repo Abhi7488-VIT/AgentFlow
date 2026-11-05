@@ -12,9 +12,15 @@ from app.core.security import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.models.workflow import Workflow
-from app.services import rag_service
 
 router = APIRouter()
+
+
+def _rag():
+    """The RAG service, imported on first use (chromadb is ~1.7 s of boot)."""
+    from app.services import rag_service
+
+    return rag_service
 
 
 class RAGQuery(BaseModel):
@@ -51,7 +57,7 @@ async def query_rag(
         # Without a workflow the question would hit the shared global
         # collection, which is not scoped to any one user's data.
         raise HTTPException(status_code=400, detail="workflow_id is required")
-    return await rag_service.query_rag(query.question, query.workflow_id)
+    return await _rag().query_rag(query.question, query.workflow_id)
 
 
 @router.post("/index")
@@ -66,7 +72,7 @@ async def index_documents(
     re-runs it, for example after changing the embedding model.
     """
     workflow = await _owned_workflow(db, workflow_id, current_user)
-    stats = await rag_service.index_workflow(db, workflow.id)
+    stats = await _rag().index_workflow(db, workflow.id)
 
     if not stats.get("indexed"):
         raise HTTPException(
@@ -90,4 +96,4 @@ async def index_status(
 ):
     """Report whether a workflow's corpus is queryable, and how large it is."""
     workflow = await _owned_workflow(db, workflow_id, current_user)
-    return await rag_service.collection_status(workflow.id)
+    return await _rag().collection_status(workflow.id)

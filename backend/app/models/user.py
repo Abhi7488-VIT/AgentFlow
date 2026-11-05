@@ -45,13 +45,13 @@ class User(Base):
 
     # Relationships
     reports: Mapped[list["Report"]] = relationship(
-        "Report", back_populates="user", lazy="selectin"
+        "Report", back_populates="user", lazy="raise_on_sql"
     )
     workflows: Mapped[list["Workflow"]] = relationship(
-        "Workflow", back_populates="user", lazy="selectin"
+        "Workflow", back_populates="user", lazy="raise_on_sql"
     )
     agent_logs: Mapped[list["AgentLog"]] = relationship(
-        "AgentLog", back_populates="user", lazy="selectin"
+        "AgentLog", back_populates="user", lazy="raise_on_sql"
     )
 
     def __repr__(self) -> str:

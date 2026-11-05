@@ -58,7 +58,7 @@ class ScrapedData(Base):
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(
-        "Workflow", back_populates="scraped_data"
+        "Workflow", back_populates="scraped_data", lazy="raise_on_sql"
     )
 
     def __repr__(self) -> str:

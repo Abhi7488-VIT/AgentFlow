@@ -4,20 +4,22 @@ import time as _time
 
 _BOOT_STARTED = _time.perf_counter()
 
+import asyncio  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
+from sqlalchemy import text
 
-from app.database import async_session_factory, init_db
-from app.services.workflow_service import fail_interrupted_workflows
+from app.database import async_session_factory
 from app.core.exceptions import AppError, app_error_handler
 from app.core.middleware import RequestLoggingMiddleware, PrometheusMiddleware
-from app.core import perf
+from app.core import startup
 from app.core.perf import PerfMiddleware
 from app.config import settings
-from app.core.scheduler import start_scheduler, stop_scheduler
+from app.core.scheduler import stop_scheduler
 from app.core.logging import get_logger
 
 from app.api.auth import router as auth_router
@@ -37,24 +39,20 @@ _BOOT_READY = _time.perf_counter()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up application...")
-    with perf.trace("startup") as boot:
-        with perf.span("startup.init_db"):
-            await init_db()
-        with perf.span("startup.reaper"):
-            async with async_session_factory() as db:
-                interrupted = await fail_interrupted_workflows(db)
-        if interrupted:
-            logger.warning(f"Marked {interrupted} interrupted workflow(s) as failed")
-        with perf.span("startup.scheduler"):
-            start_scheduler()
+    # Serve immediately; DB setup, reaper and scheduler run in the
+    # background (app/core/startup.py). /health/ready reports when done.
     logger.info(
-        "startup_perf",
+        "Starting up application...",
         import_ms=round((_BOOT_READY - _BOOT_STARTED) * 1000, 1),
-        **boot.summary(),
     )
+    background = [
+        asyncio.create_task(startup.run_startup()),
+        asyncio.create_task(startup.preload_heavy_modules()),
+    ]
     yield
     logger.info("Shutting down application...")
+    for task in background:
+        task.cancel()
     stop_scheduler()
 
 
@@ -100,3 +98,29 @@ app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 @app.get("/")
 async def root():
     return {"name": settings.APP_NAME, "version": "1.0.0", "status": "ok"}
+
+
+@app.get("/health", include_in_schema=False)
+@app.get("/api/health", include_in_schema=False)
+async def health():
+    """Liveness: the process is up. No database access, so keep-alive pings
+    and cold-start wake-ups never wake Neon or hold a pool connection."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+@app.get("/api/health/ready", include_in_schema=False)
+async def health_ready():
+    """Readiness: startup work finished and the database answers."""
+    if not startup.state.ready:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "starting", "attempts": startup.state.attempts,
+                     "error": startup.state.error},
+        )
+    try:
+        async with async_session_factory() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "error"})
+    return {"status": "ready", "database": "ok"}
