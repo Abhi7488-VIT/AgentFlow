@@ -103,8 +103,15 @@ async def root():
 @app.get("/health", include_in_schema=False)
 @app.get("/api/health", include_in_schema=False)
 async def health():
-    """Liveness: the process is up. No database access, so keep-alive pings
-    and cold-start wake-ups never wake Neon or hold a pool connection."""
+    """Health check for Render, keep-alive pings and the frontend wake-up.
+
+    Never touches the database, so frequent pings don't keep Neon awake or
+    hold a pool connection. Returns 503 until background startup (table
+    creation, reaper, scheduler) has finished: otherwise Render would route
+    traffic to a fresh instance before e.g. a newly added table exists.
+    """
+    if not startup.state.ready:
+        return JSONResponse(status_code=503, content={"status": "starting"})
     return {"status": "ok"}
 
 

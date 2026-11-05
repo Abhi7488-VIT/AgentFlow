@@ -225,12 +225,20 @@ class TestHealth:
 
         monkeypatch.setattr(main_module, "async_session_factory", explode)
         monkeypatch.setattr(settings, "PERF_DEBUG", True)
+        monkeypatch.setattr(startup.state, "ready", True)
 
         resp = await client.get(path)
 
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
         assert resp.headers["x-sql-queries"] == "0"
+
+    async def test_health_is_503_while_starting(self, client, monkeypatch):
+        """Render must not route traffic before tables exist (e.g. refresh_tokens)."""
+        monkeypatch.setattr(startup.state, "ready", False)
+        resp = await client.get("/health")
+        assert resp.status_code == 503
+        assert resp.json() == {"status": "starting"}
 
     async def test_ready_is_503_until_startup_finishes(self, client, monkeypatch):
         monkeypatch.setattr(startup.state, "ready", False)
